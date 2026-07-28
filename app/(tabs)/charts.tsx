@@ -1,7 +1,8 @@
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import { matchFont } from '@shopify/react-native-skia';
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Bar, CartesianChart, Line, Pie, PolarChart } from 'victory-native';
 import { Card, EmptyState } from '../../src/components/ui';
 import {
@@ -17,6 +18,12 @@ import { budgetPaceNzd } from '../../src/lib/pace';
 import { useApp } from '../../src/hooks/useApp';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
+
+const axisFont = matchFont({
+  fontFamily: Platform.select({ ios: 'Helvetica', default: 'sans-serif' }) ?? 'sans-serif',
+  fontSize: 10,
+  fontWeight: '500',
+});
 
 export default function ChartsScreen() {
   const db = useSQLiteContext();
@@ -78,6 +85,16 @@ export default function ChartsScreen() {
       spend: round2(spendByDate.get(date) ?? 0),
     }));
   }, [activeTrip, byDay]);
+
+  const dailyXTicks = useMemo(() => {
+    const n = dailyData.length;
+    if (n === 0) return [];
+    if (n <= 7) return dailyData.map((d) => d.index);
+    const step = Math.ceil((n - 1) / 5);
+    const ticks = new Set<number>([0, n - 1]);
+    for (let i = step; i < n - 1; i += step) ticks.add(i);
+    return Array.from(ticks).sort((a, b) => a - b);
+  }, [dailyData]);
 
   const cumulativeData = useMemo(() => {
     if (!activeTrip) return [];
@@ -147,12 +164,32 @@ export default function ChartsScreen() {
             ? `${formatShortDate(dailyData[0].date)} to ${formatShortDate(dailyData[dailyData.length - 1].date)}`
             : ''}
         </Text>
-        <View style={{ height: 200, marginTop: spacing.lg }}>
+        <View style={{ height: 220, marginTop: spacing.lg }}>
           <CartesianChart
             data={dailyData}
             xKey="index"
             yKeys={['spend']}
-            domainPadding={{ left: 12, right: 12, top: 20 }}>
+            domainPadding={{ left: 12, right: 12, top: 20 }}
+            xAxis={{
+              font: axisFont,
+              tickValues: dailyXTicks,
+              labelColor: colors.textFaint,
+              lineColor: colors.border,
+              formatXLabel: (value) => {
+                const i = Math.round(Number(value));
+                const row = dailyData[i];
+                return row ? formatShortDate(row.date) : '';
+              },
+            }}
+            yAxis={[
+              {
+                font: axisFont,
+                tickCount: 4,
+                labelColor: colors.textFaint,
+                lineColor: colors.border,
+                formatYLabel: (v) => formatNzdCompact(Number(v)),
+              },
+            ]}>
             {({ points, chartBounds }) => (
               <Bar
                 chartBounds={chartBounds}

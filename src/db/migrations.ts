@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { COUNTRY_SEED } from './countries';
 
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 4;
 
 /**
  * Runs on every app launch via SQLiteProvider's `onInit`. Uses the
@@ -126,6 +126,31 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       `ALTER TABLE trips ADD COLUMN trip_type TEXT NOT NULL DEFAULT 'multi'`
     );
     version = 2;
+  }
+
+  if (version === 2) {
+    // Optional ShopBack cashback per expense: flat amount or percentage, with a
+    // pending → confirmed / cancelled verification flow.
+    await db.execAsync(`
+      ALTER TABLE expenses ADD COLUMN shopback_type TEXT;
+      ALTER TABLE expenses ADD COLUMN shopback_value REAL;
+      ALTER TABLE expenses ADD COLUMN shopback_amount REAL;
+      ALTER TABLE expenses ADD COLUMN shopback_amount_nzd REAL;
+      ALTER TABLE expenses ADD COLUMN shopback_status TEXT;
+      ALTER TABLE expenses ADD COLUMN shopback_confirmed_at TEXT;
+    `);
+    version = 3;
+  }
+
+  if (version === 3) {
+    // ShopBack NZD must use the mid-market rate only (no card markup). Rewrite
+    // any values that were saved while markup was incorrectly applied.
+    await db.execAsync(`
+      UPDATE expenses
+      SET shopback_amount_nzd = ROUND(shopback_amount * rate_to_nzd, 2)
+      WHERE shopback_amount IS NOT NULL
+    `);
+    version = 4;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

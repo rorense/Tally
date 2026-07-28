@@ -55,6 +55,15 @@ export interface CategoryBudget extends SyncColumns {
   budget_nzd: number;
 }
 
+/** How ShopBack cashback is calculated on an expense. */
+export type ShopbackType = 'flat' | 'percent';
+
+/**
+ * Lifecycle of a ShopBack claim. `pending` until you verify it landed in the
+ * ShopBack account; `cancelled` covers declined or expired offers.
+ */
+export type ShopbackStatus = 'pending' | 'confirmed' | 'cancelled';
+
 export interface Expense extends SyncColumns {
   id: string;
   trip_id: string;
@@ -74,6 +83,15 @@ export interface Expense extends SyncColumns {
    */
   local_date: string;
   paid_by: string | null;
+  /** Null when the purchase has no ShopBack offer. */
+  shopback_type: ShopbackType | null;
+  /** Flat amount in the expense currency, or a percentage (e.g. 5 for 5%). */
+  shopback_value: number | null;
+  /** Cashback in the expense currency, derived from type + value. */
+  shopback_amount: number | null;
+  shopback_amount_nzd: number | null;
+  shopback_status: ShopbackStatus | null;
+  shopback_confirmed_at: string | null;
 }
 
 export interface FxRate {

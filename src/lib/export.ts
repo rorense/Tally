@@ -1,12 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import {
-  listCategoryBudgets,
-  listCountries,
-  listExpenses,
-  listMembers,
-} from '../db/repository';
+import { listCategoryBudgets, listExpenses } from '../db/repository';
 import { CATEGORIES, type Trip } from '../db/types';
 import { round2 } from './money';
+import { netExpenseNzd } from './shopback';
 import { buildXlsx, type Sheet } from './xlsx';
 
 export interface ExportData {
@@ -22,120 +18,165 @@ function csvEscape(value: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/** `YYYY-MM-DD` → `DD/MM`, matching the hand-maintained trip workbook. */
+function formatDayLabel(isoDate: string): string {
+  const [, month, day] = isoDate.split('-');
+  return `${day}/${month}`;
+}
+
 /**
  * Builds both export formats from one pass over the data, so the CSV and the
  * workbook can never disagree.
+ *
+ * The Excel layout mirrors the Finances tab of the trip planning spreadsheet:
+ * a day-grouped ledger on the left, with FX rates, a trip total, and category
+ * spends stacked on the right.
  */
 export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<ExportData> {
-  const [expenses, countries, budgets, members] = await Promise.all([
+  const [expenses, budgets] = await Promise.all([
     listExpenses(db, trip.id),
-    listCountries(db),
     listCategoryBudgets(db, trip.id),
-    listMembers(db, trip.id),
   ]);
 
-  const countryName = (code: string) =>
-    countries.find((c) => c.country_code === code)?.name ?? code;
-  const memberName = (id: string | null) =>
-    id ? (members.find((m) => m.user_id === id)?.display_name ?? 'Traveller') : '';
-
   // Oldest first reads better in a spreadsheet than the newest-first app list.
-  const ordered = [...expenses].sort((a, b) => a.local_date.localeCompare(b.local_date));
+  const ordered = [...expenses].sort((a, b) => {
+    const byDate = a.local_date.localeCompare(b.local_date);
+    if (byDate !== 0) return byDate;
+    return a.spent_at.localeCompare(b.spent_at);
+  });
 
-  const headers = [
+  const dayKey = (localDate: string) =>
+    localDate < trip.start_date ? 'pretrip' : localDate;
+
+  const dayTotals = new Map<string, number>();
+  for (const e of ordered) {
+    const key = dayKey(e.local_date);
+    dayTotals.set(key, (dayTotals.get(key) ?? 0) + netExpenseNzd(e));
+  }
+
+  const total = round2(ordered.reduce((sum, e) => sum + netExpenseNzd(e), 0));
+  const shopbackConfirmed = round2(
+    ordered.reduce(
+      (sum, e) =>
+        sum + (e.shopback_status === 'confirmed' ? (e.shopback_amount_nzd ?? 0) : 0),
+      0
+    )
+  );
+
+  // One rate per currency: prefer the most recent expense's frozen rate.
+  const rateByCurrency = new Map<string, number>();
+  for (const e of ordered) {
+    rateByCurrency.set(e.currency, e.rate_to_nzd);
+  }
+  if (!rateByCurrency.has('NZD')) rateByCurrency.set('NZD', 1);
+
+  // Stacked beside the ledger, matching the hand workbook: FX table, trip
+  // total, then per-category spends (and budgets when set).
+  const sidePanel: (string | number)[][] = [];
+  for (const [currency, rate] of [...rateByCurrency.entries()].sort(([a], [b]) =>
+    a.localeCompare(b)
+  )) {
+    sidePanel.push([currency, rate]);
+  }
+  sidePanel.push(['', '']);
+  sidePanel.push(['Total (net ShopBack)', total]);
+  if (shopbackConfirmed > 0) {
+    sidePanel.push(['ShopBack confirmed', shopbackConfirmed]);
+  }
+  sidePanel.push(['', '']);
+  sidePanel.push(['Category Spends', '']);
+  for (const cat of CATEGORIES) {
+    const spent = round2(
+      ordered.filter((e) => e.category === cat).reduce((s, e) => s + netExpenseNzd(e), 0)
+    );
+    const budget = budgets.find((b) => b.category === cat)?.budget_nzd ?? 0;
+    sidePanel.push([cat, spent]);
+    if (budget > 0) sidePanel.push([`${cat} budget`, round2(budget)]);
+  }
+
+  const ledgerRows: (string | number)[][] = [];
+  let previousKey: string | null = null;
+
+  for (const e of ordered) {
+    const key = dayKey(e.local_date);
+    const isFirstOfDay = key !== previousKey;
+    previousKey = key;
+
+    const dateLabel =
+      key === 'pretrip' ? 'Pretrip' : isFirstOfDay ? formatDayLabel(e.local_date) : '';
+
+    ledgerRows.push([
+      dateLabel,
+      e.category,
+      e.description,
+      round2(e.amount),
+      e.currency,
+      round2(e.amount_nzd),
+      e.shopback_type ?? '',
+      e.shopback_value != null ? round2(e.shopback_value) : '',
+      e.shopback_amount != null ? round2(e.shopback_amount) : '',
+      e.shopback_amount_nzd != null ? round2(e.shopback_amount_nzd) : '',
+      e.shopback_status ?? '',
+      round2(netExpenseNzd(e)),
+      isFirstOfDay ? round2(dayTotals.get(key) ?? 0) : '',
+    ]);
+  }
+
+  const emptyLedger = ['', '', '', '', '', '', '', '', '', '', '', '', ''];
+  const rowCount = Math.max(ledgerRows.length, sidePanel.length);
+  const sheetRows: (string | number)[][] = [];
+  for (let i = 0; i < rowCount; i++) {
+    const ledger = ledgerRows[i] ?? emptyLedger;
+    const side = sidePanel[i] ?? ['', ''];
+    sheetRows.push([...ledger, side[0], side[1]]);
+  }
+
+  const csvHeaders = [
     'Date',
     'Category',
     'Description',
-    'Country',
     'Amount',
     'Currency',
-    'Rate to NZD',
-    'Amount NZD',
-    'Paid by',
+    'NZD Equivalent',
+    'ShopBack Type',
+    'ShopBack Value',
+    'ShopBack Amount',
+    'ShopBack NZD',
+    'ShopBack Status',
+    'Net NZD',
+    'Day Total',
   ];
-
-  const rows = ordered.map((e) => [
-    e.local_date,
-    e.category,
-    e.description,
-    countryName(e.country_code),
-    round2(e.amount),
-    e.currency,
-    e.rate_to_nzd,
-    round2(e.amount_nzd),
-    memberName(e.paid_by),
-  ]);
-
   const csv = [
-    headers.join(','),
-    ...rows.map((r) => r.map(csvEscape).join(',')),
+    csvHeaders.join(','),
+    ...ledgerRows.map((r) => r.map(csvEscape).join(',')),
   ].join('\n');
 
-  const total = round2(ordered.reduce((sum, e) => sum + e.amount_nzd, 0));
-
-  const expensesSheet: Sheet = {
-    name: 'Expenses',
+  const financesSheet: Sheet = {
+    name: 'finances',
     columns: [
-      { header: 'Date', width: 12 },
-      { header: 'Category', width: 15 },
-      { header: 'Description', width: 34 },
-      { header: 'Country', width: 18 },
+      { header: 'Date', width: 10 },
+      { header: 'Category', width: 14 },
+      { header: 'Description', width: 36 },
       { header: 'Amount', width: 12, format: 'money' },
       { header: 'Currency', width: 10 },
-      { header: 'Rate to NZD', width: 13 },
-      { header: 'Amount NZD', width: 14, format: 'money' },
-      { header: 'Paid by', width: 16 },
+      { header: 'NZD Equivalent', width: 14, format: 'money' },
+      { header: 'ShopBack Type', width: 12 },
+      { header: 'ShopBack Value', width: 12, format: 'money' },
+      { header: 'ShopBack Amount', width: 14, format: 'money' },
+      { header: 'ShopBack NZD', width: 12, format: 'money' },
+      { header: 'ShopBack Status', width: 12 },
+      { header: 'Net NZD', width: 12, format: 'money' },
+      { header: 'Day Total', width: 12, format: 'money' },
+      { header: 'Currency Conversion (1 unit equals to NZD)', width: 42 },
+      { header: '', width: 14, format: 'money' },
     ],
-    rows,
-  };
-
-  const budgetFor = (category: string) =>
-    budgets.find((b) => b.category === category)?.budget_nzd ?? 0;
-
-  const summaryRows: (string | number)[][] = [
-    ['Trip', trip.name],
-    ['Dates', `${trip.start_date} to ${trip.end_date}`],
-    ['Type', trip.trip_type === 'single' ? 'Single country' : 'Multiple countries'],
-    ['Total budget NZD', round2(trip.total_budget_nzd)],
-    ['Total spent NZD', total],
-    ['Remaining NZD', round2(trip.total_budget_nzd - total)],
-    ['Expenses recorded', ordered.length],
-    ['', ''],
-    ['Category', 'Spent NZD'],
-  ];
-
-  for (const cat of CATEGORIES) {
-    const spent = round2(
-      ordered.filter((e) => e.category === cat).reduce((s, e) => s + e.amount_nzd, 0)
-    );
-    summaryRows.push([cat, spent]);
-    const budget = budgetFor(cat);
-    if (budget > 0) summaryRows.push([`${cat} budget`, round2(budget)]);
-  }
-
-  summaryRows.push(['', '']);
-  summaryRows.push(['Country', 'Spent NZD']);
-  const countryTotals = new Map<string, number>();
-  for (const e of ordered) {
-    countryTotals.set(e.country_code, (countryTotals.get(e.country_code) ?? 0) + e.amount_nzd);
-  }
-  for (const [code, amount] of [...countryTotals].sort((a, b) => b[1] - a[1])) {
-    summaryRows.push([countryName(code), round2(amount)]);
-  }
-
-  const summarySheet: Sheet = {
-    name: 'Summary',
-    columns: [
-      { header: 'Item', width: 26 },
-      { header: 'Value', width: 22 },
-    ],
-    rows: summaryRows,
+    rows: sheetRows,
   };
 
   return {
     csv,
-    xlsx: buildXlsx([summarySheet, expensesSheet]),
-    baseName: `${trip.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-expenses`,
+    xlsx: buildXlsx([financesSheet]),
+    baseName: `${trip.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-finances`,
     rowCount: ordered.length,
   };
 }

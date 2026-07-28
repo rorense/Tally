@@ -77,6 +77,12 @@ export async function seedRehearsalTrip(db: SQLiteDatabase): Promise<string> {
       spent_at: new Date().toISOString(),
       local_date: date,
       paid_by: null,
+      shopback_type: null,
+      shopback_value: null,
+      shopback_amount: null,
+      shopback_amount_nzd: null,
+      shopback_status: null,
+      shopback_confirmed_at: null,
     });
   }
 

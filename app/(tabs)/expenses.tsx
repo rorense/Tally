@@ -14,6 +14,7 @@ import { listCountries, listExpenses } from '../../src/db/repository';
 import { CATEGORIES, type Category, type Country, type Expense } from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
 import { formatMoney, formatNzd } from '../../src/lib/money';
+import { netExpenseNzd } from '../../src/lib/shopback';
 import { useApp } from '../../src/hooks/useApp';
 import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
@@ -65,7 +66,7 @@ export default function ExpensesScreen() {
       .sort((a, b) => b[0].localeCompare(a[0]))
       .map(([date, data]) => ({
         title: date,
-        total: data.reduce((sum, e) => sum + e.amount_nzd, 0),
+        total: data.reduce((sum, e) => sum + netExpenseNzd(e), 0),
         data,
       }));
   }, [expenses]);
@@ -139,6 +140,15 @@ export default function ExpensesScreen() {
                 </Text>
                 <Text style={styles.meta}>
                   {`${item.category} \u00B7 ${country?.name ?? item.country_code}`}
+                  {item.shopback_type
+                    ? ` \u00B7 SB ${
+                        item.shopback_status === 'confirmed'
+                          ? '✓'
+                          : item.shopback_status === 'cancelled'
+                            ? '✗'
+                            : '…'
+                      }`
+                    : ''}
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>

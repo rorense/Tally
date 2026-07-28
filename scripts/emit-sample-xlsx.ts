@@ -5,50 +5,33 @@
 import { writeFileSync } from 'node:fs';
 import { buildXlsx, type Sheet } from '../src/lib/xlsx.ts';
 
-const expenses: Sheet = {
-  name: 'Expenses',
+const finances: Sheet = {
+  name: 'finances',
   columns: [
-    { header: 'Date', width: 12 },
-    { header: 'Category', width: 15 },
-    { header: 'Description', width: 34 },
-    { header: 'Country', width: 18 },
+    { header: 'Date', width: 10 },
+    { header: 'Category', width: 14 },
+    { header: 'Description', width: 36 },
     { header: 'Amount', width: 12, format: 'money' },
     { header: 'Currency', width: 10 },
-    { header: 'Rate to NZD', width: 13 },
-    { header: 'Amount NZD', width: 14, format: 'money' },
-    { header: 'Paid by', width: 16 },
+    { header: 'NZD Equivalent', width: 14, format: 'money' },
+    { header: 'Day Total', width: 12, format: 'money' },
+    { header: 'Currency Conversion (1 unit equals to NZD)', width: 42 },
+    { header: '', width: 14, format: 'money' },
   ],
   rows: [
-    ['2027-01-14', 'Food', 'Dinner in Trastevere', 'Italy', 46.8, 'EUR', 1.9663, 92.02, 'Sam'],
-    ['2027-01-15', 'Activity', 'Colosseum & forum', 'Italy', 34, 'EUR', 1.9663, 66.85, 'Alex'],
-    ['2027-01-16', 'Transport', 'Train to Florence', 'Italy', 29.9, 'EUR', 1.9663, 58.79, 'Sam'],
-    ['2027-01-18', 'Accommodation', 'Hotel "Le Pont"', 'France', 180, 'EUR', 1.9663, 353.93, 'Alex'],
-    ['2027-01-20', 'Souvenir', 'Postcards', 'United Kingdom', 6.5, 'GBP', 2.2991, 14.94, 'Sam'],
-  ],
-};
-
-const summary: Sheet = {
-  name: 'Summary',
-  columns: [
-    { header: 'Item', width: 26 },
-    { header: 'Value', width: 22 },
-  ],
-  rows: [
-    ['Trip', 'Europe 2027'],
-    ['Dates', '2027-01-10 to 2027-02-02'],
-    ['Type', 'Multiple countries'],
-    ['Total budget NZD', 12000],
-    ['Total spent NZD', 586.53],
-    ['', ''],
-    ['Category', 'Spent NZD'],
-    ['Food', 92.02],
-    ['Activity', 66.85],
-    ['Transport', 58.79],
-    ['Accommodation', 353.93],
-    ['Souvenir', 14.94],
+    ['Pretrip', 'Transport', 'Auckland to Rome', 1890, 'NZD', 1890, 2243.93, 'EUR', 1.9663],
+    ['Pretrip', 'Accommodation', 'Rome hotel', 180, 'EUR', 353.93, '', 'NZD', 1],
+    ['14/01', 'Food', 'Dinner in Trastevere', 46.8, 'EUR', 92.02, 158.87, '', ''],
+    ['', 'Activity', 'Colosseum & forum', 34, 'EUR', 66.85, '', 'Total', 2802.8],
+    ['15/01', 'Transport', 'Train to Florence', 29.9, 'EUR', 58.79, 58.79, '', ''],
+    ['', '', '', '', '', '', '', 'Category Spends', ''],
+    ['', '', '', '', '', '', '', 'Transport', 1948.79],
+    ['', '', '', '', '', '', '', 'Accommodation', 353.93],
+    ['', '', '', '', '', '', '', 'Activity', 66.85],
+    ['', '', '', '', '', '', '', 'Food', 92.02],
   ],
 };
 
 const out = process.argv[2] ?? 'sample-export.xlsx';
-writeFileSync(out, buildXlsx([summary, expenses]));
+writeFileSync(out, buildXlsx([finances]));
 console.log(`wrote ${out}`);

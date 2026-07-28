@@ -36,10 +36,21 @@ test('stripLocalColumns drops the dirty flag before a push', () => {
   assert.deepEqual(out, { id: '1', name: 'Rome' });
 });
 
-test('normaliseForPostgres turns empty strings into null', () => {
-  const out = normaliseForPostgres({ id: '1', leg_id: '', dirty: 1, paid_by: '' });
+test('normaliseForPostgres nulls optional FKs but keeps empty NOT NULL text', () => {
+  const out = normaliseForPostgres({
+    id: '1',
+    leg_id: '',
+    paid_by: '',
+    deleted_at: '',
+    display_name: '',
+    description: '',
+    dirty: 1,
+  });
   assert.equal(out.leg_id, null);
   assert.equal(out.paid_by, null);
+  assert.equal(out.deleted_at, null);
+  assert.equal(out.display_name, '');
+  assert.equal(out.description, '');
   assert.equal('dirty' in out, false);
 });
 

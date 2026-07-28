@@ -284,7 +284,7 @@ export default function SettingsScreen() {
         <Text style={styles.cardTitle}>Export</Text>
         <Caption>
           Every expense on this trip, including the rate each one was locked at. The Excel
-          workbook adds a summary sheet with totals by category and country.
+          workbook matches a Finances tab: day-grouped spend, day totals, FX rates, and category totals.
         </Caption>
         <View style={{ height: spacing.lg }} />
         <Button

@@ -7,20 +7,24 @@ import { Colors, radius, spacing, type } from '../theme/theme';
 import { useTheme, useThemedStyles } from '../theme/useTheme';
 import { TripIllustration } from './TripIllustration';
 
+/** Large page title for Expenses / ShopBack / Charts. */
+export function SectionHeaderTitle({ section }: { section: string }) {
+  const styles = useThemedStyles(createStyles);
+  return <Text style={styles.sectionTitle}>{section}</Text>;
+}
+
 /**
- * Header control for Expenses / Charts. Shows the active trip and opens a
- * picker so you can switch without bouncing back to the Trip tab.
+ * Compact trip picker for the header's right side. Opens a sheet so you can
+ * switch trips without bouncing back to the Trip tab.
  */
-export function TripSwitcherHeader({ section }: { section: string }) {
+export function TripSwitcherHeader() {
   const { activeTrip, trips, setActiveTrip } = useApp();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
 
-  if (!activeTrip) {
-    return <Text style={styles.sectionOnly}>{section}</Text>;
-  }
+  if (!activeTrip) return null;
 
   return (
     <>
@@ -30,13 +34,10 @@ export function TripSwitcherHeader({ section }: { section: string }) {
         accessibilityRole="button"
         accessibilityLabel={`Active trip ${activeTrip.name}. Tap to switch.`}
         style={styles.headerHit}>
-        <Text style={styles.section}>{section}</Text>
-        <View style={styles.tripRow}>
-          <Text style={styles.tripName} numberOfLines={1}>
-            {activeTrip.name}
-          </Text>
-          <Text style={styles.chevron}>{'\u25BE'}</Text>
-        </View>
+        <Text style={styles.tripName} numberOfLines={1}>
+          {activeTrip.name}
+        </Text>
+        <Text style={styles.chevron}>{'\u25BE'}</Text>
       </Pressable>
 
       <Modal
@@ -84,12 +85,22 @@ export function TripSwitcherHeader({ section }: { section: string }) {
 
 const createStyles = (c: Colors) =>
   StyleSheet.create({
-    headerHit: { alignItems: 'center', maxWidth: 280 },
-    sectionOnly: { ...type.heading, color: c.text, fontWeight: '700' },
-    section: { ...type.caption, color: c.textMuted, fontWeight: '600' },
-    tripRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
-    tripName: { ...type.heading, color: c.text, fontWeight: '700', maxWidth: 220 },
-    chevron: { color: c.textMuted, fontSize: 14, marginTop: 1 },
+    sectionTitle: { ...type.title, color: c.text },
+    headerHit: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      maxWidth: 140,
+      paddingVertical: spacing.xs,
+      paddingHorizontal: spacing.sm,
+      borderRadius: radius.pill,
+      backgroundColor: c.surfaceRaised,
+      borderWidth: 1,
+      borderColor: c.border,
+      marginRight: spacing.sm,
+    },
+    tripName: { ...type.caption, color: c.textMuted, fontWeight: '600', flexShrink: 1 },
+    chevron: { color: c.textFaint, fontSize: 11, marginTop: 1 },
     backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
     sheet: {
       backgroundColor: c.surface,

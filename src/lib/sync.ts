@@ -32,13 +32,36 @@ async function columnsOf(db: SQLiteDatabase, table: string): Promise<string[]> {
 }
 
 /** Pushes every locally-changed row, then clears the dirty flag on success. */
-async function pushTable(db: SQLiteDatabase, table: SyncedTable): Promise<number> {
+async function pushTable(
+  db: SQLiteDatabase,
+  table: SyncedTable,
+  displayName = ''
+): Promise<number> {
   if (!supabase) return 0;
 
   const dirtyRows = await db.getAllAsync<Record<string, unknown>>(
     `SELECT * FROM ${table} WHERE dirty = 1`
   );
   if (dirtyRows.length === 0) return 0;
+
+  if (table === 'trips') {
+    // Plain upsert needs INSERT+UPDATE RLS. A new trip fails the UPDATE check
+    // before membership exists, so trips go through a security-definer RPC.
+    for (const row of dirtyRows) {
+      const payload = normaliseForPostgres(row);
+      const { error } = await supabase.rpc('upsert_own_trip', {
+        p_trip: payload,
+        p_display_name: displayName,
+      });
+      if (error) throw new Error(`push trips: ${error.message}`);
+      await db.runAsync(
+        `UPDATE trips SET dirty = 0 WHERE id = ? AND updated_at = ?`,
+        row.id as string,
+        row.updated_at as string
+      );
+    }
+    return dirtyRows.length;
+  }
 
   const payload = dirtyRows.map(normaliseForPostgres);
   const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
@@ -166,7 +189,7 @@ export async function runSync(db: SQLiteDatabase, displayName = ''): Promise<Syn
     await ensureSelfMembership(db, session.user.id, displayName);
 
     for (const table of SYNCED_TABLES) {
-      pushed += await pushTable(db, table);
+      pushed += await pushTable(db, table, displayName);
     }
 
     const since = await getSyncState(db, LAST_PULLED_KEY);

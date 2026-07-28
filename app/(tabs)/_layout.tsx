@@ -1,6 +1,9 @@
 import { Tabs } from 'expo-router';
 import { ColorValue, Text } from 'react-native';
-import { TripSwitcherHeader } from '../../src/components/TripSwitcherHeader';
+import {
+  SectionHeaderTitle,
+  TripSwitcherHeader,
+} from '../../src/components/TripSwitcherHeader';
 import { spacing } from '../../src/theme/theme';
 import { useTheme } from '../../src/theme/useTheme';
 
@@ -10,6 +13,15 @@ import { useTheme } from '../../src/theme/useTheme';
  */
 function TabIcon({ glyph, color }: { glyph: string; color: ColorValue }) {
   return <Text style={{ color, fontSize: 20 }}>{glyph}</Text>;
+}
+
+function sectionHeader(section: string) {
+  return {
+    title: section,
+    headerTitleAlign: 'left' as const,
+    headerTitle: () => <SectionHeaderTitle section={section} />,
+    headerRight: () => <TripSwitcherHeader />,
+  };
 }
 
 export default function TabsLayout() {
@@ -41,17 +53,22 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="expenses"
         options={{
-          title: 'Expenses',
-          headerTitle: () => <TripSwitcherHeader section="Expenses" />,
+          ...sectionHeader('Expenses'),
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u2261'} color={color} />,
         }}
       />
       <Tabs.Screen
         name="charts"
         options={{
-          title: 'Charts',
-          headerTitle: () => <TripSwitcherHeader section="Charts" />,
+          ...sectionHeader('Charts'),
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u25E7'} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="shopback"
+        options={{
+          ...sectionHeader('ShopBack'),
+          tabBarIcon: ({ color }) => <TabIcon glyph={'\u21BA'} color={color} />,
         }}
       />
       <Tabs.Screen

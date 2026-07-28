@@ -7,6 +7,7 @@ import type {
   Country,
   Expense,
   FxRate,
+  ShopbackStatus,
   Trip,
   TripLeg,
   TripMember,
@@ -377,8 +378,10 @@ export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Pr
   const id = newId();
   await db.runAsync(
     `INSERT INTO expenses (id, trip_id, leg_id, country_code, category, description, amount,
-      currency, rate_to_nzd, amount_nzd, spent_at, local_date, paid_by, updated_at, deleted_at, dirty)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)`,
+      currency, rate_to_nzd, amount_nzd, spent_at, local_date, paid_by,
+      shopback_type, shopback_value, shopback_amount, shopback_amount_nzd, shopback_status,
+      shopback_confirmed_at, updated_at, deleted_at, dirty)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)`,
     id,
     input.trip_id,
     input.leg_id,
@@ -392,6 +395,12 @@ export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Pr
     input.spent_at,
     input.local_date,
     input.paid_by,
+    input.shopback_type,
+    input.shopback_value,
+    input.shopback_amount,
+    input.shopback_amount_nzd,
+    input.shopback_status,
+    input.shopback_confirmed_at,
     t.updated_at
   );
   return id;
@@ -402,7 +411,9 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
   await db.runAsync(
     `UPDATE expenses SET trip_id = ?, leg_id = ?, country_code = ?, category = ?, description = ?,
       amount = ?, currency = ?, rate_to_nzd = ?, amount_nzd = ?, spent_at = ?, local_date = ?,
-      paid_by = ?, updated_at = ?, dirty = 1 WHERE id = ?`,
+      paid_by = ?, shopback_type = ?, shopback_value = ?, shopback_amount = ?,
+      shopback_amount_nzd = ?, shopback_status = ?, shopback_confirmed_at = ?,
+      updated_at = ?, dirty = 1 WHERE id = ?`,
     input.trip_id,
     input.leg_id,
     input.country_code,
@@ -415,8 +426,117 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
     input.spent_at,
     input.local_date,
     input.paid_by,
+    input.shopback_type,
+    input.shopback_value,
+    input.shopback_amount,
+    input.shopback_amount_nzd,
+    input.shopback_status,
+    input.shopback_confirmed_at,
     t.updated_at,
     id
+  );
+}
+
+/** Confirm, cancel, or reopen a ShopBack claim without rewriting the expense. */
+export async function updateShopbackStatus(
+  db: SQLiteDatabase,
+  id: string,
+  status: ShopbackStatus
+) {
+  const t = touch();
+  const confirmedAt = status === 'confirmed' ? t.updated_at : null;
+  await db.runAsync(
+    `UPDATE expenses SET shopback_status = ?, shopback_confirmed_at = ?,
+      updated_at = ?, dirty = 1 WHERE id = ?`,
+    status,
+    confirmedAt,
+    t.updated_at,
+    id
+  );
+}
+
+export async function listShopbackExpenses(
+  db: SQLiteDatabase,
+  tripId: string,
+  status: ShopbackStatus | null = null
+): Promise<Expense[]> {
+  const where = [
+    'trip_id = ?',
+    'deleted_at IS NULL',
+    'shopback_type IS NOT NULL',
+    'shopback_amount_nzd IS NOT NULL',
+  ];
+  const params: (string | number)[] = [tripId];
+  if (status) {
+    where.push('shopback_status = ?');
+    params.push(status);
+  }
+  return db.getAllAsync<Expense>(
+    `SELECT * FROM expenses WHERE ${where.join(' AND ')}
+     ORDER BY CASE shopback_status WHEN 'pending' THEN 0 WHEN 'confirmed' THEN 1 ELSE 2 END,
+       local_date DESC, spent_at DESC`,
+    params
+  );
+}
+
+export interface ShopbackSummary {
+  pending_nzd: number;
+  confirmed_nzd: number;
+  cancelled_nzd: number;
+  pending_count: number;
+  confirmed_count: number;
+  cancelled_count: number;
+}
+
+export async function shopbackSummary(
+  db: SQLiteDatabase,
+  tripId: string
+): Promise<ShopbackSummary> {
+  const rows = await db.getAllAsync<{
+    shopback_status: string;
+    total: number;
+    count: number;
+  }>(
+    `SELECT shopback_status, SUM(shopback_amount_nzd) AS total, COUNT(*) AS count
+     FROM expenses
+     WHERE trip_id = ? AND deleted_at IS NULL AND shopback_type IS NOT NULL
+     GROUP BY shopback_status`,
+    tripId
+  );
+
+  const summary: ShopbackSummary = {
+    pending_nzd: 0,
+    confirmed_nzd: 0,
+    cancelled_nzd: 0,
+    pending_count: 0,
+    confirmed_count: 0,
+    cancelled_count: 0,
+  };
+
+  for (const row of rows) {
+    if (row.shopback_status === 'pending') {
+      summary.pending_nzd = row.total ?? 0;
+      summary.pending_count = row.count;
+    } else if (row.shopback_status === 'confirmed') {
+      summary.confirmed_nzd = row.total ?? 0;
+      summary.confirmed_count = row.count;
+    } else if (row.shopback_status === 'cancelled') {
+      summary.cancelled_nzd = row.total ?? 0;
+      summary.cancelled_count = row.count;
+    }
+  }
+  return summary;
+}
+
+export async function shopbackByCategory(
+  db: SQLiteDatabase,
+  tripId: string
+): Promise<{ category: Category; total: number }[]> {
+  return db.getAllAsync(
+    `SELECT category, SUM(shopback_amount_nzd) AS total FROM expenses
+     WHERE trip_id = ? AND deleted_at IS NULL AND shopback_status = 'confirmed'
+     GROUP BY category ORDER BY total DESC`,
+    tripId
   );
 }
 
@@ -432,9 +552,15 @@ export async function deleteExpense(db: SQLiteDatabase, id: string) {
 
 // ---------------------------------------------------------------- aggregates
 
+/** Confirmed ShopBack reduces effective spend; pending/cancelled do not. */
+const NET_NZD = `amount_nzd - CASE
+  WHEN shopback_status = 'confirmed' THEN COALESCE(shopback_amount_nzd, 0)
+  ELSE 0
+END`;
+
 export async function totalSpentNzd(db: SQLiteDatabase, tripId: string): Promise<number> {
   const row = await db.getFirstAsync<{ total: number | null }>(
-    'SELECT SUM(amount_nzd) AS total FROM expenses WHERE trip_id = ? AND deleted_at IS NULL',
+    `SELECT SUM(${NET_NZD}) AS total FROM expenses WHERE trip_id = ? AND deleted_at IS NULL`,
     tripId
   );
   return row?.total ?? 0;
@@ -445,7 +571,7 @@ export async function spentByCategory(
   tripId: string
 ): Promise<{ category: Category; total: number }[]> {
   return db.getAllAsync(
-    `SELECT category, SUM(amount_nzd) AS total FROM expenses
+    `SELECT category, SUM(${NET_NZD}) AS total FROM expenses
      WHERE trip_id = ? AND deleted_at IS NULL GROUP BY category ORDER BY total DESC`,
     tripId
   );
@@ -456,7 +582,7 @@ export async function spentByCountry(
   tripId: string
 ): Promise<{ country_code: string; total: number }[]> {
   return db.getAllAsync(
-    `SELECT country_code, SUM(amount_nzd) AS total FROM expenses
+    `SELECT country_code, SUM(${NET_NZD}) AS total FROM expenses
      WHERE trip_id = ? AND deleted_at IS NULL GROUP BY country_code ORDER BY total DESC`,
     tripId
   );
@@ -467,7 +593,7 @@ export async function spentByDay(
   tripId: string
 ): Promise<{ local_date: string; total: number }[]> {
   return db.getAllAsync(
-    `SELECT local_date, SUM(amount_nzd) AS total FROM expenses
+    `SELECT local_date, SUM(${NET_NZD}) AS total FROM expenses
      WHERE trip_id = ? AND deleted_at IS NULL GROUP BY local_date ORDER BY local_date`,
     tripId
   );
@@ -479,7 +605,7 @@ export async function spentOnDay(
   date: string
 ): Promise<number> {
   const row = await db.getFirstAsync<{ total: number | null }>(
-    `SELECT SUM(amount_nzd) AS total FROM expenses
+    `SELECT SUM(${NET_NZD}) AS total FROM expenses
      WHERE trip_id = ? AND local_date = ? AND deleted_at IS NULL`,
     tripId,
     date

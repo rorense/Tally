@@ -20,16 +20,32 @@ import {
   type Category,
   type Country,
   type Expense,
+  type ShopbackType,
   type TripMember,
 } from '../../src/db/types';
 import { isValidDate, nowIso, todayLocal } from '../../src/lib/dates';
-import { convertToNzd, formatNzd, parseAmount } from '../../src/lib/money';
+import { convertToNzd, formatMoney, formatNzd, parseAmount } from '../../src/lib/money';
 import { isRateStale, rateAgeLabel } from '../../src/lib/fx';
+import { computeShopbackAmount, computeShopbackNzd } from '../../src/lib/shopback';
 import { useApp } from '../../src/hooks/useApp';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useRates } from '../../src/hooks/useRates';
 import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
+
+type ShopbackMode = 'None' | 'Flat' | '%';
+
+function modeFromType(t: ShopbackType | null | undefined): ShopbackMode {
+  if (t === 'flat') return 'Flat';
+  if (t === 'percent') return '%';
+  return 'None';
+}
+
+function typeFromMode(m: ShopbackMode): ShopbackType | null {
+  if (m === 'Flat') return 'flat';
+  if (m === '%') return 'percent';
+  return null;
+}
 
 export default function ExpenseScreen() {
   const db = useSQLiteContext();
@@ -54,6 +70,8 @@ export default function ExpenseScreen() {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string | null>(null);
+  const [shopbackMode, setShopbackMode] = useState<ShopbackMode>('None');
+  const [shopbackValue, setShopbackValue] = useState('');
   // Tracks the date we last applied an itinerary leg for, so changing the date
   // re-infers country, but opening a fresh form keeps the last-used country.
   const lastAppliedDate = useRef<string | null>(null);
@@ -81,6 +99,8 @@ export default function ExpenseScreen() {
         setDescription(e.description);
         setAmount(String(e.amount));
         setPaidBy(e.paid_by);
+        setShopbackMode(modeFromType(e.shopback_type));
+        setShopbackValue(e.shopback_value != null ? String(e.shopback_value) : '');
         lastAppliedDate.current = e.local_date;
       } else {
         setPaidBy(userId);
@@ -147,6 +167,8 @@ export default function ExpenseScreen() {
   const keptRate = existing && existing.currency === currency ? existing.rate_to_nzd : null;
   const effectiveRate = keptRate ?? rate?.rate_to_nzd ?? null;
   const parsedAmount = parseAmount(amount);
+  const parsedShopbackValue = parseAmount(shopbackValue);
+  const shopbackType = typeFromMode(shopbackMode);
 
   const nzdPreview = useMemo(() => {
     if (parsedAmount === null || effectiveRate === null) return null;
@@ -161,10 +183,30 @@ export default function ExpenseScreen() {
     return convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct);
   }, [parsedAmount, effectiveRate, settings.cardMarkupPct, existing, keptRate, currency]);
 
+  const shopbackPreview = useMemo(() => {
+    if (!shopbackType || parsedAmount === null || parsedShopbackValue === null) return null;
+    if (parsedShopbackValue <= 0) return null;
+    if (shopbackType === 'percent' && parsedShopbackValue > 100) return null;
+    const amountLocal = computeShopbackAmount(parsedAmount, shopbackType, parsedShopbackValue);
+    if (effectiveRate === null) return { amountLocal, amountNzd: null as number | null };
+    return {
+      amountLocal,
+      amountNzd: computeShopbackNzd(amountLocal, effectiveRate),
+    };
+  }, [
+    shopbackType,
+    parsedAmount,
+    parsedShopbackValue,
+    effectiveRate,
+  ]);
+
   async function handleSave() {
     if (!activeTrip) return Alert.alert('No trip', 'Create a trip first.');
     if (parsedAmount === null || parsedAmount <= 0) {
       return Alert.alert('Amount required', 'Enter how much you spent.');
+    }
+    if (!description.trim()) {
+      return Alert.alert('Description required', 'Say what the purchase was.');
     }
     if (!countryCode) return Alert.alert('Country required', 'Pick where you spent it.');
     if (!isValidDate(date)) return Alert.alert('Check the date', 'Use a real YYYY-MM-DD date.');
@@ -173,6 +215,53 @@ export default function ExpenseScreen() {
         'No rate yet',
         `No cached rate for ${currency}. Connect once to fetch rates, or enter the amount in a currency you already have a rate for.`
       );
+    }
+
+    let shopbackFields: Pick<
+      Expense,
+      | 'shopback_type'
+      | 'shopback_value'
+      | 'shopback_amount'
+      | 'shopback_amount_nzd'
+      | 'shopback_status'
+      | 'shopback_confirmed_at'
+    > = {
+      shopback_type: null,
+      shopback_value: null,
+      shopback_amount: null,
+      shopback_amount_nzd: null,
+      shopback_status: null,
+      shopback_confirmed_at: null,
+    };
+
+    if (shopbackType) {
+      if (parsedShopbackValue === null || parsedShopbackValue <= 0) {
+        return Alert.alert(
+          'ShopBack value',
+          shopbackType === 'percent'
+            ? 'Enter the cashback percentage.'
+            : 'Enter the flat ShopBack amount.'
+        );
+      }
+      if (shopbackType === 'percent' && parsedShopbackValue > 100) {
+        return Alert.alert('ShopBack value', 'Percentage must be 100 or less.');
+      }
+      const sbAmount = computeShopbackAmount(parsedAmount, shopbackType, parsedShopbackValue);
+      const sbNzd = computeShopbackNzd(sbAmount, effectiveRate);
+      // Keep confirmation state when editing an existing claim; new ones start pending.
+      const keepStatus =
+        existing?.shopback_type && existing.shopback_status
+          ? existing.shopback_status
+          : 'pending';
+      shopbackFields = {
+        shopback_type: shopbackType,
+        shopback_value: parsedShopbackValue,
+        shopback_amount: sbAmount,
+        shopback_amount_nzd: sbNzd,
+        shopback_status: keepStatus,
+        shopback_confirmed_at:
+          keepStatus === 'confirmed' ? (existing?.shopback_confirmed_at ?? nowIso()) : null,
+      };
     }
 
     // Reopening an expense and saving without changing amount/currency must not
@@ -199,6 +288,7 @@ export default function ExpenseScreen() {
       spent_at: existing?.spent_at ?? nowIso(),
       local_date: date,
       paid_by: paidBy,
+      ...shopbackFields,
     };
 
     if (isNew) await createExpense(db, payload);
@@ -323,6 +413,42 @@ export default function ExpenseScreen() {
         />
       </Card>
 
+      <Card>
+        <Text style={styles.sectionLabel}>ShopBack</Text>
+        <ChipRow
+          options={['None', 'Flat', '%'] as const}
+          value={shopbackMode}
+          onChange={setShopbackMode}
+        />
+        {shopbackMode !== 'None' ? (
+          <>
+            <View style={{ height: spacing.md }} />
+            <Field
+              label={shopbackMode === 'Flat' ? `Cashback (${currency})` : 'Cashback %'}
+              value={shopbackValue}
+              onChangeText={setShopbackValue}
+              placeholder={shopbackMode === 'Flat' ? '0.00' : '5'}
+              keyboardType="decimal-pad"
+              hint={
+                shopbackMode === 'Flat'
+                  ? 'Flat amount ShopBack will credit for this purchase.'
+                  : 'Percentage of the spend returned as ShopBack.'
+              }
+            />
+            {shopbackPreview ? (
+              <Text style={styles.shopbackPreview}>
+                Expect{' '}
+                {formatMoney(shopbackPreview.amountLocal, currency)}
+                {shopbackPreview.amountNzd != null
+                  ? ` (${formatNzd(shopbackPreview.amountNzd)})`
+                  : ''}{' '}
+                back · verify on the ShopBack tab
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+      </Card>
+
       {members.length > 1 ? (
         <Card>
           <Text style={styles.sectionLabel}>Paid by</Text>
@@ -380,6 +506,7 @@ const createStyles = (c: Colors) =>
     nzd: { ...type.title, color: c.success },
     nzdMissing: { ...type.label, color: c.warning },
     rateNote: { ...type.caption, color: c.textFaint, marginTop: spacing.sm },
+    shopbackPreview: { ...type.caption, color: c.success, marginTop: spacing.xs },
     sectionLabel: {
       ...type.label,
       color: c.textMuted,

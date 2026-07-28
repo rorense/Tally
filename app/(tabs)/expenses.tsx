@@ -15,11 +15,14 @@ import { CATEGORIES, type Category, type Country, type Expense } from '../../src
 import { formatLongDate } from '../../src/lib/dates';
 import { formatMoney, formatNzd } from '../../src/lib/money';
 import { useApp } from '../../src/hooks/useApp';
-import { colors, radius, spacing, type } from '../../src/theme/theme';
+import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
+import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
 export default function ExpensesScreen() {
   const db = useSQLiteContext();
   const { activeTrip, revision } = useApp();
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
@@ -158,65 +161,66 @@ export default function ExpensesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  filters: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  search: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    color: colors.text,
-    fontSize: 15,
-    marginBottom: spacing.md,
-  },
-  list: { padding: spacing.lg, paddingBottom: spacing.xxl * 3 },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  sectionDate: { ...type.label, color: colors.textMuted },
-  sectionTotal: { ...type.label, color: colors.textFaint },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    gap: spacing.md,
-  },
-  bar: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
-  desc: { ...type.body, color: colors.text },
-  meta: { ...type.caption, color: colors.textFaint, marginTop: 1 },
-  nzd: { ...type.heading, color: colors.text },
-  original: { ...type.caption, color: colors.textFaint },
-  fab: {
-    position: 'absolute',
-    right: spacing.lg,
-    bottom: spacing.xl,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
-  fabText: { color: '#fff', fontSize: 30, fontWeight: '600', marginTop: -3 },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: c.bg },
+    filters: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    search: {
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      color: c.text,
+      fontSize: 15,
+      marginBottom: spacing.md,
+    },
+    list: { padding: spacing.lg, paddingBottom: spacing.xxl * 3 },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: spacing.lg,
+      marginBottom: spacing.sm,
+    },
+    sectionDate: { ...type.label, color: c.textMuted },
+    sectionTotal: { ...type.label, color: c.textFaint },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.surface,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+      gap: spacing.md,
+    },
+    bar: { width: 4, alignSelf: 'stretch', borderRadius: 2 },
+    desc: { ...type.body, color: c.text },
+    meta: { ...type.caption, color: c.textFaint, marginTop: 1 },
+    nzd: { ...type.heading, color: c.text },
+    original: { ...type.caption, color: c.textFaint },
+    fab: {
+      position: 'absolute',
+      right: spacing.lg,
+      bottom: spacing.xl,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: c.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOpacity: 0.35,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 6,
+    },
+    fabText: { color: onFill(c.accent), fontSize: 30, fontWeight: '600', marginTop: -3 },
+  });

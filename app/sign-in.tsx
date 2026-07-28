@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Body, Button, Card, Caption, Field, H1, Screen } from '../src/components/ui';
 import { useAuth } from '../src/hooks/useAuth';
-import { colors, spacing, type } from '../src/theme/theme';
+import { Colors, spacing, type } from '../src/theme/theme';
+import { useThemedStyles } from '../src/theme/useTheme';
 
 export default function SignInScreen() {
   const { signIn, signUp, configured } = useAuth();
+  const styles = useThemedStyles(createStyles);
   const [mode, setMode] = useState<'in' | 'up'>('in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -113,8 +115,9 @@ export default function SignInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  error: { ...type.caption, color: colors.danger, marginBottom: spacing.md },
-  notice: { ...type.caption, color: colors.success, marginBottom: spacing.md, lineHeight: 17 },
-  toggle: { ...type.label, color: colors.accent, textAlign: 'center', padding: spacing.lg },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    error: { ...type.caption, color: c.danger, marginBottom: spacing.md },
+    notice: { ...type.caption, color: c.success, marginBottom: spacing.md, lineHeight: 17 },
+    toggle: { ...type.label, color: c.accent, textAlign: 'center', padding: spacing.lg },
+  });

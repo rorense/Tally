@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { ColorValue, Text } from 'react-native';
-import { colors, spacing } from '../../src/theme/theme';
+import { spacing } from '../../src/theme/theme';
+import { useTheme } from '../../src/theme/useTheme';
 
 /**
  * Text glyph icons rather than an icon font: keeps the bundle small and avoids
@@ -11,6 +12,7 @@ function TabIcon({ glyph, color }: { glyph: string; color: ColorValue }) {
 }
 
 export default function TabsLayout() {
+  const { colors } = useTheme();
   return (
     <Tabs
       screenOptions={{

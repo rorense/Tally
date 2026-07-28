@@ -6,11 +6,13 @@ import { Share, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, Caption, H1, Screen } from '../../src/components/ui';
 import { getTrip } from '../../src/db/repository';
 import type { Trip } from '../../src/db/types';
-import { colors, radius, spacing, type } from '../../src/theme/theme';
+import { Colors, radius, spacing, type } from '../../src/theme/theme';
+import { useThemedStyles } from '../../src/theme/useTheme';
 
 export default function ShareTripScreen() {
   const db = useSQLiteContext();
   const params = useLocalSearchParams<{ id: string }>();
+  const styles = useThemedStyles(createStyles);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -63,16 +65,17 @@ export default function ShareTripScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  codeBox: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.xl,
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  code: { fontSize: 34, fontWeight: '800', color: colors.text, letterSpacing: 5 },
-  note: { ...type.caption, color: colors.textMuted, lineHeight: 18 },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    codeBox: {
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingVertical: spacing.xl,
+      alignItems: 'center',
+      marginBottom: spacing.lg,
+    },
+    code: { fontSize: 34, fontWeight: '800', color: c.text, letterSpacing: 5 },
+    note: { ...type.caption, color: c.textMuted, lineHeight: 18 },
+  });

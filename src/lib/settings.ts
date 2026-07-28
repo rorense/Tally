@@ -1,11 +1,13 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { getSetting, setSetting } from '../db/repository';
+import { isThemePreference, type ThemePreference } from '../theme/useTheme';
 
 export const SETTING_KEYS = {
   activeTripId: 'active_trip_id',
   wifiOnlySync: 'wifi_only_sync',
   cardMarkupPct: 'card_markup_pct',
   displayName: 'display_name',
+  themePreference: 'theme_preference',
 } as const;
 
 export interface AppSettings {
@@ -14,6 +16,7 @@ export interface AppSettings {
   wifiOnlySync: boolean;
   cardMarkupPct: number;
   displayName: string;
+  themePreference: ThemePreference;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -21,14 +24,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   wifiOnlySync: true,
   cardMarkupPct: 0,
   displayName: '',
+  themePreference: 'system',
 };
 
 export async function loadSettings(db: SQLiteDatabase): Promise<AppSettings> {
-  const [activeTripId, wifiOnly, markup, displayName] = await Promise.all([
+  const [activeTripId, wifiOnly, markup, displayName, theme] = await Promise.all([
     getSetting(db, SETTING_KEYS.activeTripId),
     getSetting(db, SETTING_KEYS.wifiOnlySync),
     getSetting(db, SETTING_KEYS.cardMarkupPct),
     getSetting(db, SETTING_KEYS.displayName),
+    getSetting(db, SETTING_KEYS.themePreference),
   ]);
 
   return {
@@ -36,6 +41,8 @@ export async function loadSettings(db: SQLiteDatabase): Promise<AppSettings> {
     wifiOnlySync: wifiOnly === null ? DEFAULT_SETTINGS.wifiOnlySync : wifiOnly === '1',
     cardMarkupPct: markup === null ? 0 : Number(markup) || 0,
     displayName: displayName ?? '',
+    themePreference:
+      theme !== null && isThemePreference(theme) ? theme : DEFAULT_SETTINGS.themePreference,
   };
 }
 

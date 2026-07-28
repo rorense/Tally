@@ -3,6 +3,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SyncBanner } from '../../src/components/SyncBanner';
+import { TripIllustration } from '../../src/components/TripIllustration';
 import { Button, Card, EmptyState, ProgressBar } from '../../src/components/ui';
 import {
   findLegForDate,
@@ -18,7 +19,8 @@ import { daysBetween, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact } from '../../src/lib/money';
 import { useApp } from '../../src/hooks/useApp';
 import { useSync } from '../../src/hooks/useSync';
-import { colors, radius, spacing, type } from '../../src/theme/theme';
+import { Colors, radius, spacing, type } from '../../src/theme/theme';
+import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
 interface Dash {
   total: number;
@@ -32,8 +34,10 @@ interface Dash {
 
 export default function DashboardScreen() {
   const db = useSQLiteContext();
-  const { activeTrip, revision, refresh } = useApp();
+  const { activeTrip, trips, setActiveTrip, revision, refresh } = useApp();
   const { syncNow, syncing } = useSync();
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   const [data, setData] = useState<Dash | null>(null);
 
   const load = useCallback(async () => {
@@ -109,14 +113,44 @@ export default function DashboardScreen() {
       }>
       <SyncBanner />
 
-      <Card>
-        <Text style={styles.tripName}>{activeTrip.name}</Text>
-        <Text style={styles.tripDates}>
-          {formatShortDate(activeTrip.start_date)} to {formatShortDate(activeTrip.end_date)}
-          {data?.currentCountry ? ` \u00B7 currently in ${data.currentCountry}` : ''}
-        </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tripBubbles}
+        style={styles.tripBubblesScroll}>
+        {trips.map((t) => {
+          const active = t.id === activeTrip.id;
+          return (
+            <Pressable
+              key={t.id}
+              onPress={() => {
+                if (!active) setActiveTrip(t.id);
+              }}
+              style={[styles.tripBubble, active && styles.tripBubbleActive]}>
+              <TripIllustration tripType={t.trip_type} active={active} size={64} />
+              <Text
+                style={[styles.tripBubbleText, active && styles.tripBubbleTextActive]}
+                numberOfLines={2}>
+                {t.name}
+              </Text>
+              <Text
+                style={[styles.tripBubbleMeta, active && styles.tripBubbleMetaActive]}
+                numberOfLines={1}>
+                {formatShortDate(t.start_date)} to {formatShortDate(t.end_date)}
+              </Text>
+            </Pressable>
+          );
+        })}
+        <Pressable onPress={() => router.push('/trip/edit')} style={styles.tripBubbleAdd}>
+          <Text style={styles.tripBubbleAddMark}>+</Text>
+          <Text style={styles.tripBubbleAddLabel}>New trip</Text>
+        </Pressable>
+      </ScrollView>
 
-        <View style={{ height: spacing.xl }} />
+      <Card>
+        {data?.currentCountry ? (
+          <Text style={styles.currentPlace}>Currently in {data.currentCountry}</Text>
+        ) : null}
 
         <Text style={styles.bigTotal}>{formatNzd(spent)}</Text>
         <Text style={styles.bigTotalLabel}>
@@ -232,49 +266,108 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
-  tripName: { ...type.title, color: colors.text },
-  tripDates: { ...type.caption, color: colors.textMuted, marginTop: 2 },
-  bigTotal: { fontSize: 40, fontWeight: '800', color: colors.text, letterSpacing: -1 },
-  bigTotalLabel: { ...type.caption, color: colors.textMuted, marginTop: 2 },
-  statRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.md },
-  stat: { ...type.label, color: colors.textMuted },
-  tileRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
-  tile: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    alignItems: 'center',
-  },
-  tileValue: { ...type.heading, color: colors.text },
-  tileLabel: { ...type.caption, color: colors.textFaint, marginTop: 2 },
-  sectionTitle: { ...type.heading, color: colors.text, marginBottom: spacing.md },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  link: { ...type.label, color: colors.accent, marginBottom: spacing.md },
-  catRow: { marginBottom: spacing.lg },
-  catHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.md },
-  catName: { ...type.body, color: colors.text, flex: 1 },
-  catAmount: { ...type.label, color: colors.text },
-  catBudget: { color: colors.textFaint },
-  expenseRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  expenseDesc: { ...type.body, color: colors.text },
-  expenseMeta: { ...type.caption, color: colors.textFaint, marginTop: 1 },
-  expenseAmount: { ...type.label, color: colors.text },
-  muted: { ...type.body, color: colors.textFaint },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: c.bg },
+    content: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
+    tripBubblesScroll: { marginBottom: spacing.lg, marginHorizontal: -spacing.lg },
+    tripBubbles: {
+      paddingHorizontal: spacing.lg,
+      gap: spacing.md,
+      alignItems: 'stretch',
+    },
+    tripBubble: {
+      width: 148,
+      minHeight: 168,
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.lg,
+      paddingBottom: spacing.md,
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderColor: c.border,
+      backgroundColor: c.surface,
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      gap: spacing.sm,
+    },
+    tripBubbleActive: {
+      backgroundColor: c.accentSoft,
+      borderColor: c.accent,
+    },
+    tripBubbleText: {
+      ...type.label,
+      color: c.text,
+      textAlign: 'center',
+      fontSize: 14,
+      lineHeight: 18,
+    },
+    tripBubbleTextActive: { color: c.accent },
+    tripBubbleMeta: {
+      ...type.caption,
+      color: c.textFaint,
+      textAlign: 'center',
+      fontSize: 11,
+    },
+    tripBubbleMetaActive: { color: c.textMuted },
+    tripBubbleAdd: {
+      width: 112,
+      minHeight: 168,
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: c.border,
+      backgroundColor: c.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+    },
+    tripBubbleAddMark: {
+      fontSize: 28,
+      fontWeight: '600',
+      color: c.textMuted,
+      lineHeight: 32,
+    },
+    tripBubbleAddLabel: { ...type.caption, color: c.textFaint },
+    currentPlace: { ...type.caption, color: c.textMuted, marginBottom: spacing.md },
+    bigTotal: { fontSize: 40, fontWeight: '800', color: c.text, letterSpacing: -1 },
+    bigTotalLabel: { ...type.caption, color: c.textMuted, marginTop: 2 },
+    statRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.md },
+    stat: { ...type.label, color: c.textMuted },
+    tileRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+    tile: {
+      flex: 1,
+      backgroundColor: c.surface,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: spacing.lg,
+      alignItems: 'center',
+    },
+    tileValue: { ...type.heading, color: c.text },
+    tileLabel: { ...type.caption, color: c.textFaint, marginTop: 2 },
+    sectionTitle: { ...type.heading, color: c.text, marginBottom: spacing.md },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    link: { ...type.label, color: c.accent, marginBottom: spacing.md },
+    catRow: { marginBottom: spacing.lg },
+    catHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+    dot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.md },
+    catName: { ...type.body, color: c.text, flex: 1 },
+    catAmount: { ...type.label, color: c.text },
+    catBudget: { color: c.textFaint },
+    expenseRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    expenseDesc: { ...type.body, color: c.text },
+    expenseMeta: { ...type.caption, color: c.textFaint, marginTop: 1 },
+    expenseAmount: { ...type.label, color: c.text },
+    muted: { ...type.body, color: c.textFaint },
+  });

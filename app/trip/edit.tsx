@@ -28,12 +28,15 @@ import {
 import { formatShortDate, isValidDate, todayLocal } from '../../src/lib/dates';
 import { parseAmount } from '../../src/lib/money';
 import { useApp } from '../../src/hooks/useApp';
-import { colors, radius, spacing, type } from '../../src/theme/theme';
+import { Colors, radius, spacing, type } from '../../src/theme/theme';
+import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
 export default function TripEditScreen() {
   const db = useSQLiteContext();
   const { refresh, setActiveTrip } = useApp();
   const params = useLocalSearchParams<{ id?: string }>();
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   const tripId = params.id ?? null;
   const isNew = !tripId;
 
@@ -297,6 +300,8 @@ function TypeOption({
   active: boolean;
   onPress: () => void;
 }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   return (
     <Pressable style={[styles.typeCard, active && styles.typeCardActive]} onPress={onPress}>
       <Text style={[styles.typeTitle, active && { color: colors.accent }]}>{title}</Text>
@@ -317,6 +322,7 @@ function LegRow({
   onRemove: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const styles = useThemedStyles(createStyles);
   const country = countries.find((c) => c.country_code === leg.country_code);
 
   return (
@@ -358,62 +364,63 @@ function LegRow({
   );
 }
 
-const styles = StyleSheet.create({
-  sectionLabel: {
-    ...type.label,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  typeRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
-  typeCard: {
-    flex: 1,
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-  },
-  typeCardActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
-  typeTitle: { ...type.heading, color: colors.text, marginBottom: 4 },
-  typeDetail: { ...type.caption, color: colors.textMuted, lineHeight: 16 },
-  leg: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
-    overflow: 'hidden',
-  },
-  legHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.lg,
-  },
-  legCountry: { ...type.heading, color: colors.text },
-  legDates: { ...type.caption, color: colors.textMuted, marginTop: 2 },
-  legCurrency: {
-    ...type.label,
-    color: colors.accent,
-    backgroundColor: colors.accentSoft,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    overflow: 'hidden',
-  },
-  legBody: {
-    padding: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  budgetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  budgetLabel: { ...type.body, color: colors.text, flex: 1 },
-  budgetInput: { width: 110, textAlign: 'right' },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    sectionLabel: {
+      ...type.label,
+      color: c.textMuted,
+      marginBottom: spacing.sm,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    typeRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+    typeCard: {
+      flex: 1,
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: spacing.lg,
+    },
+    typeCardActive: { borderColor: c.accent, backgroundColor: c.accentSoft },
+    typeTitle: { ...type.heading, color: c.text, marginBottom: 4 },
+    typeDetail: { ...type.caption, color: c.textMuted, lineHeight: 16 },
+    leg: {
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      marginBottom: spacing.md,
+      overflow: 'hidden',
+    },
+    legHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: spacing.lg,
+    },
+    legCountry: { ...type.heading, color: c.text },
+    legDates: { ...type.caption, color: c.textMuted, marginTop: 2 },
+    legCurrency: {
+      ...type.label,
+      color: c.accent,
+      backgroundColor: c.accentSoft,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 3,
+      borderRadius: radius.sm,
+      overflow: 'hidden',
+    },
+    legBody: {
+      padding: spacing.lg,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+    },
+    budgetRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginBottom: spacing.md,
+    },
+    dot: { width: 10, height: 10, borderRadius: 5 },
+    budgetLabel: { ...type.body, color: c.text, flex: 1 },
+    budgetInput: { width: 110, textAlign: 'right' },
+  });

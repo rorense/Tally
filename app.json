@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "tally",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "nz.tally.app"
@@ -31,9 +31,13 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
+          "image": "./assets/splash-icon-light.png",
           "resizeMode": "contain",
-          "backgroundColor": "#0B0E14"
+          "backgroundColor": "#F4F6FA",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#0B0E14"
+          }
         }
       ]
     ],

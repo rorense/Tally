@@ -14,11 +14,14 @@ import type { Category, Country } from '../../src/db/types';
 import { dateRange, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact, round2 } from '../../src/lib/money';
 import { useApp } from '../../src/hooks/useApp';
-import { colors, radius, spacing, type } from '../../src/theme/theme';
+import { Colors, radius, spacing, type } from '../../src/theme/theme';
+import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
 export default function ChartsScreen() {
   const db = useSQLiteContext();
   const { activeTrip, revision } = useApp();
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
 
   const [byCategory, setByCategory] = useState<{ category: Category; total: number }[]>([]);
   const [byCountry, setByCountry] = useState<{ country_code: string; total: number }[]>([]);
@@ -54,7 +57,7 @@ export default function ChartsScreen() {
           value: round2(c.total),
           color: colors.category[c.category] ?? colors.accent,
         })),
-    [byCategory]
+    [byCategory, colors]
   );
 
   /**
@@ -225,6 +228,7 @@ export default function ChartsScreen() {
 }
 
 function LegendKey({ color, label }: { color: string; label: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.legendKey}>
       <View style={[styles.dot, { backgroundColor: color }]} />
@@ -233,32 +237,33 @@ function LegendKey({ color, label }: { color: string; label: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
-  title: { ...type.heading, color: colors.text },
-  subtitle: { ...type.caption, color: colors.textMuted, marginTop: 2 },
-  legend: { marginTop: spacing.lg, gap: spacing.sm },
-  legendItem: { flexDirection: 'row', alignItems: 'center' },
-  legendRow: { flexDirection: 'row', gap: spacing.lg, marginTop: spacing.md },
-  legendKey: { flexDirection: 'row', alignItems: 'center' },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.sm },
-  legendLabel: { ...type.body, color: colors.text, flex: 1 },
-  legendValue: { ...type.caption, color: colors.textMuted },
-  countryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  countryName: { ...type.caption, color: colors.text, width: 96 },
-  countryBarTrack: {
-    flex: 1,
-    height: 10,
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.pill,
-    overflow: 'hidden',
-  },
-  countryBarFill: { height: '100%', backgroundColor: colors.accent, borderRadius: radius.pill },
-  countryValue: { ...type.caption, color: colors.textMuted, width: 52, textAlign: 'right' },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: c.bg },
+    content: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
+    title: { ...type.heading, color: c.text },
+    subtitle: { ...type.caption, color: c.textMuted, marginTop: 2 },
+    legend: { marginTop: spacing.lg, gap: spacing.sm },
+    legendItem: { flexDirection: 'row', alignItems: 'center' },
+    legendRow: { flexDirection: 'row', gap: spacing.lg, marginTop: spacing.md },
+    legendKey: { flexDirection: 'row', alignItems: 'center' },
+    dot: { width: 10, height: 10, borderRadius: 5, marginRight: spacing.sm },
+    legendLabel: { ...type.body, color: c.text, flex: 1 },
+    legendValue: { ...type.caption, color: c.textMuted },
+    countryRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginBottom: spacing.md,
+    },
+    countryName: { ...type.caption, color: c.text, width: 96 },
+    countryBarTrack: {
+      flex: 1,
+      height: 10,
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.pill,
+      overflow: 'hidden',
+    },
+    countryBarFill: { height: '100%', backgroundColor: c.accent, borderRadius: radius.pill },
+    countryValue: { ...type.caption, color: c.textMuted, width: 52, textAlign: 'right' },
+  });

@@ -16,7 +16,19 @@ import { useApp } from '../../src/hooks/useApp';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useRates } from '../../src/hooks/useRates';
 import { useSync } from '../../src/hooks/useSync';
-import { colors, radius, spacing, type } from '../../src/theme/theme';
+import { Colors, radius, spacing, type } from '../../src/theme/theme';
+import {
+  THEME_PREFERENCES,
+  useTheme,
+  useThemedStyles,
+  type ThemePreference,
+} from '../../src/theme/useTheme';
+
+const SCHEME_LABELS: Record<ThemePreference, string> = {
+  system: 'System',
+  light: 'Light',
+  dark: 'Dark',
+};
 
 export default function SettingsScreen() {
   const db = useSQLiteContext();
@@ -24,6 +36,8 @@ export default function SettingsScreen() {
   const { session, email, configured, signOut } = useAuth();
   const { rates, refresh: refreshRates, refreshing } = useRates();
   const { syncNow, syncing, pending } = useSync();
+  const styles = useThemedStyles(createStyles);
+  const { colors, scheme } = useTheme();
 
   const [members, setMembers] = useState<TripMember[]>([]);
   const [markup, setMarkup] = useState(String(settings.cardMarkupPct));
@@ -140,6 +154,34 @@ export default function SettingsScreen() {
           )}
         </Card>
       ) : null}
+
+      <Card>
+        <Text style={styles.cardTitle}>Appearance</Text>
+        <Caption>
+          {settings.themePreference === 'system'
+            ? `Following your phone, currently ${scheme}.`
+            : `Always ${settings.themePreference}, whatever your phone is set to.`}
+        </Caption>
+        <View style={styles.segmented}>
+          {THEME_PREFERENCES.map((option) => (
+            <Pressable
+              key={option}
+              style={[
+                styles.segment,
+                settings.themePreference === option && styles.segmentActive,
+              ]}
+              onPress={() => updateSetting('themePreference', option)}>
+              <Text
+                style={[
+                  styles.segmentText,
+                  settings.themePreference === option && styles.segmentTextActive,
+                ]}>
+                {SCHEME_LABELS[option]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </Card>
 
       <Card>
         <Text style={styles.cardTitle}>Sync</Text>
@@ -275,38 +317,56 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  cardTitle: { ...type.heading, color: colors.text, marginBottom: spacing.sm },
-  subLabel: {
-    ...type.label,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  tripRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    marginBottom: spacing.xs,
-  },
-  tripRowActive: { backgroundColor: colors.accentSoft },
-  tripName: { ...type.body, color: colors.text },
-  tripMeta: { ...type.caption, color: colors.textFaint, marginTop: 1 },
-  activeTag: { ...type.caption, color: colors.accent, fontWeight: '700' },
-  codeBox: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    marginVertical: spacing.lg,
-  },
-  code: { fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: 4 },
-  member: { ...type.body, color: colors.text, paddingVertical: 2 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
-  switchLabel: { ...type.body, color: colors.text },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    cardTitle: { ...type.heading, color: c.text, marginBottom: spacing.sm },
+    subLabel: {
+      ...type.label,
+      color: c.textMuted,
+      marginBottom: spacing.sm,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    tripRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.md,
+      borderRadius: radius.md,
+      marginBottom: spacing.xs,
+    },
+    tripRowActive: { backgroundColor: c.accentSoft },
+    tripName: { ...type.body, color: c.text },
+    tripMeta: { ...type.caption, color: c.textFaint, marginTop: 1 },
+    activeTag: { ...type.caption, color: c.accent, fontWeight: '700' },
+    codeBox: {
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingVertical: spacing.lg,
+      alignItems: 'center',
+      marginVertical: spacing.lg,
+    },
+    code: { fontSize: 26, fontWeight: '800', color: c.text, letterSpacing: 4 },
+    member: { ...type.body, color: c.text, paddingVertical: 2 },
+    switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+    switchLabel: { ...type.body, color: c.text },
+    segmented: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      marginTop: spacing.lg,
+    },
+    segment: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: spacing.md,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      backgroundColor: c.surfaceRaised,
+    },
+    segmentActive: { backgroundColor: c.accentSoft, borderColor: c.accent },
+    segmentText: { ...type.label, color: c.textMuted },
+    segmentTextActive: { color: c.accent },
+  });

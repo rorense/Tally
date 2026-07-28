@@ -10,9 +10,11 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, type } from '../theme/theme';
+import { Colors, onFill, radius, spacing, type } from '../theme/theme';
+import { useTheme, useThemedStyles } from '../theme/useTheme';
 
 export function Screen({ children, scroll = true }: { children?: ReactNode; scroll?: boolean }) {
+  const styles = useThemedStyles(createStyles);
   if (!scroll) return <View style={styles.screen}>{children}</View>;
   return (
     <ScrollView
@@ -25,22 +27,27 @@ export function Screen({ children, scroll = true }: { children?: ReactNode; scro
 }
 
 export function Card({ children, style }: { children: ReactNode; style?: ViewStyle }) {
+  const styles = useThemedStyles(createStyles);
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
 export function H1({ children }: { children: ReactNode }) {
+  const styles = useThemedStyles(createStyles);
   return <Text style={styles.h1}>{children}</Text>;
 }
 
 export function H2({ children }: { children: ReactNode }) {
+  const styles = useThemedStyles(createStyles);
   return <Text style={styles.h2}>{children}</Text>;
 }
 
 export function Body({ children, muted }: { children: ReactNode; muted?: boolean }) {
-  return <Text style={[styles.body, muted && { color: colors.textMuted }]}>{children}</Text>;
+  const styles = useThemedStyles(createStyles);
+  return <Text style={[styles.body, muted && styles.bodyMuted]}>{children}</Text>;
 }
 
 export function Caption({ children }: { children: ReactNode }) {
+  const styles = useThemedStyles(createStyles);
   return <Text style={styles.caption}>{children}</Text>;
 }
 
@@ -50,6 +57,8 @@ export function Field({
   containerStyle,
   ...props
 }: TextInputProps & { label?: string; hint?: string; containerStyle?: ViewStyle }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   return (
     <View style={[{ marginBottom: spacing.lg }, containerStyle]}>
       {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
@@ -76,6 +85,7 @@ export function Button({
   loading?: boolean;
   disabled?: boolean;
 }) {
+  const styles = useThemedStyles(createStyles);
   const isDisabled = disabled || loading;
   return (
     <Pressable
@@ -83,23 +93,23 @@ export function Button({
       disabled={isDisabled}
       style={({ pressed }) => [
         styles.button,
-        variant === 'primary' && { backgroundColor: colors.accent },
-        variant === 'secondary' && {
-          backgroundColor: 'transparent',
-          borderWidth: 1,
-          borderColor: colors.border,
-        },
-        variant === 'danger' && { backgroundColor: colors.danger },
+        variant === 'primary' && styles.buttonPrimary,
+        variant === 'secondary' && styles.buttonSecondary,
+        variant === 'danger' && styles.buttonDanger,
         pressed && { opacity: 0.75 },
         isDisabled && { opacity: 0.45 },
       ]}>
       {loading ? (
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator
+          color={variant === 'secondary' ? styles.buttonTextSecondary.color : styles.buttonText.color}
+        />
       ) : (
         <Text
           style={[
             styles.buttonText,
-            variant === 'secondary' && { color: colors.text },
+            variant === 'primary' && styles.buttonTextPrimary,
+            variant === 'secondary' && styles.buttonTextSecondary,
+            variant === 'danger' && styles.buttonTextDanger,
           ]}>
           {title}
         </Text>
@@ -120,6 +130,8 @@ export function ChipRow<T extends string>({
   onChange: (v: T) => void;
   colorFor?: (v: T) => string;
 }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   return (
     <ScrollView
       horizontal
@@ -132,11 +144,8 @@ export function ChipRow<T extends string>({
           <Pressable
             key={opt}
             onPress={() => onChange(opt)}
-            style={[
-              styles.chip,
-              active && { backgroundColor: tint, borderColor: tint },
-            ]}>
-            <Text style={[styles.chipText, active && { color: '#0B0E14' }]}>{opt}</Text>
+            style={[styles.chip, active && { backgroundColor: tint, borderColor: tint }]}>
+            <Text style={[styles.chipText, active && { color: onFill(tint) }]}>{opt}</Text>
           </Pressable>
         );
       })}
@@ -144,15 +153,9 @@ export function ChipRow<T extends string>({
   );
 }
 
-export function ProgressBar({
-  value,
-  max,
-  color = colors.accent,
-}: {
-  value: number;
-  max: number;
-  color?: string;
-}) {
+export function ProgressBar({ value, max, color }: { value: number; max: number; color?: string }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   const pct = max > 0 ? Math.min(value / max, 1) : 0;
   const over = max > 0 && value > max;
   return (
@@ -160,7 +163,7 @@ export function ProgressBar({
       <View
         style={[
           styles.progressFill,
-          { width: `${pct * 100}%`, backgroundColor: over ? colors.danger : color },
+          { width: `${pct * 100}%`, backgroundColor: over ? colors.danger : color ?? colors.accent },
         ]}
       />
     </View>
@@ -168,10 +171,12 @@ export function ProgressBar({
 }
 
 export function Divider() {
+  const styles = useThemedStyles(createStyles);
   return <View style={styles.divider} />;
 }
 
 export function EmptyState({ title, subtitle }: { title: string; subtitle?: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>{title}</Text>
@@ -180,64 +185,72 @@ export function EmptyState({ title, subtitle }: { title: string; subtitle?: stri
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
-  screenContent: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.lg,
-  },
-  h1: { ...type.display, color: colors.text, marginBottom: spacing.xs },
-  h2: { ...type.title, color: colors.text, marginBottom: spacing.md },
-  body: { ...type.body, color: colors.text },
-  caption: { ...type.caption, color: colors.textMuted },
-  fieldLabel: {
-    ...type.label,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  input: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    color: colors.text,
-    fontSize: 16,
-  },
-  hint: { ...type.caption, color: colors.textFaint, marginTop: spacing.xs },
-  button: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg - 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: { ...type.heading, color: '#fff' },
-  chip: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceRaised,
-  },
-  chipText: { ...type.label, color: colors.textMuted },
-  progressTrack: {
-    height: 8,
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.pill,
-    overflow: 'hidden',
-  },
-  progressFill: { height: '100%', borderRadius: radius.pill },
-  divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl },
-  emptyTitle: { ...type.heading, color: colors.textMuted, marginBottom: spacing.xs },
-  emptySub: { ...type.caption, color: colors.textFaint, textAlign: 'center' },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: c.bg },
+    screenContent: { padding: spacing.lg, paddingBottom: spacing.xxl * 2 },
+    card: {
+      backgroundColor: c.surface,
+      borderRadius: radius.lg,
+      padding: spacing.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      marginBottom: spacing.lg,
+    },
+    h1: { ...type.display, color: c.text, marginBottom: spacing.xs },
+    h2: { ...type.title, color: c.text, marginBottom: spacing.md },
+    body: { ...type.body, color: c.text },
+    bodyMuted: { color: c.textMuted },
+    caption: { ...type.caption, color: c.textMuted },
+    fieldLabel: {
+      ...type.label,
+      color: c.textMuted,
+      marginBottom: spacing.sm,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    input: {
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      color: c.text,
+      fontSize: 16,
+    },
+    hint: { ...type.caption, color: c.textFaint, marginTop: spacing.xs },
+    button: {
+      borderRadius: radius.md,
+      paddingVertical: spacing.lg - 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonPrimary: { backgroundColor: c.accent },
+    buttonSecondary: { backgroundColor: 'transparent', borderWidth: 1, borderColor: c.border },
+    buttonDanger: { backgroundColor: c.danger },
+    buttonText: { ...type.heading, color: onFill(c.accent) },
+    buttonTextPrimary: { color: onFill(c.accent) },
+    buttonTextSecondary: { color: c.text },
+    buttonTextDanger: { color: onFill(c.danger) },
+    chip: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: c.border,
+      backgroundColor: c.surfaceRaised,
+    },
+    chipText: { ...type.label, color: c.textMuted },
+    progressTrack: {
+      height: 8,
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.pill,
+      overflow: 'hidden',
+    },
+    progressFill: { height: '100%', borderRadius: radius.pill },
+    divider: { height: 1, backgroundColor: c.border, marginVertical: spacing.md },
+    empty: { alignItems: 'center', paddingVertical: spacing.xxl },
+    emptyTitle: { ...type.heading, color: c.textMuted, marginBottom: spacing.xs },
+    emptySub: { ...type.caption, color: c.textFaint, textAlign: 'center' },
+  });

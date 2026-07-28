@@ -355,6 +355,18 @@ export async function getExpense(db: SQLiteDatabase, id: string): Promise<Expens
   return db.getFirstAsync<Expense>('SELECT * FROM expenses WHERE id = ?', id);
 }
 
+/** Most recently logged expense on a trip. Used to sticky-default country on the next entry. */
+export async function getLatestExpense(
+  db: SQLiteDatabase,
+  tripId: string
+): Promise<Expense | null> {
+  return db.getFirstAsync<Expense>(
+    `SELECT * FROM expenses WHERE trip_id = ? AND deleted_at IS NULL
+     ORDER BY local_date DESC, spent_at DESC LIMIT 1`,
+    tripId
+  );
+}
+
 export type ExpenseInput = Omit<Expense, keyof import('./types').SyncColumns | 'id'>;
 
 export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Promise<string> {

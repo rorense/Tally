@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CountryPicker } from '../../src/components/CountryPicker';
 import { DateField } from '../../src/components/DateField';
@@ -9,8 +9,8 @@ import {
   createExpense,
   deleteExpense,
   findLegForDate,
-  getCountry,
   getExpense,
+  getLatestExpense,
   listCountries,
   listMembers,
   updateExpense,
@@ -28,7 +28,8 @@ import { isRateStale, rateAgeLabel } from '../../src/lib/fx';
 import { useApp } from '../../src/hooks/useApp';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useRates } from '../../src/hooks/useRates';
-import { colors, radius, spacing, type } from '../../src/theme/theme';
+import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
+import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
 export default function ExpenseScreen() {
   const db = useSQLiteContext();
@@ -36,6 +37,8 @@ export default function ExpenseScreen() {
   const { rateFor } = useRates();
   const { userId } = useAuth();
   const params = useLocalSearchParams<{ id: string }>();
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   const isNew = params.id === 'new';
 
   const [loaded, setLoaded] = useState(false);
@@ -51,8 +54,12 @@ export default function ExpenseScreen() {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string | null>(null);
+  // Tracks the date we last applied an itinerary leg for, so changing the date
+  // re-infers country, but opening a fresh form keeps the last-used country.
+  const lastAppliedDate = useRef<string | null>(null);
 
-  // Loads the expense being edited, or seeds a new one from today's leg.
+  // Loads the expense being edited, or seeds a new one from the last entry /
+  // today's leg so consecutive logging does not re-ask for country.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -74,8 +81,29 @@ export default function ExpenseScreen() {
         setDescription(e.description);
         setAmount(String(e.amount));
         setPaidBy(e.paid_by);
+        lastAppliedDate.current = e.local_date;
       } else {
         setPaidBy(userId);
+        const today = todayLocal();
+        if (activeTrip) {
+          const latest = await getLatestExpense(db, activeTrip.id);
+          if (cancelled) return;
+          if (latest) {
+            setCountryCode(latest.country_code);
+            setCurrency(latest.currency);
+            setLegId(latest.leg_id);
+            lastAppliedDate.current = today;
+          } else {
+            const leg = await findLegForDate(db, activeTrip.id, today);
+            if (cancelled) return;
+            if (leg) {
+              setLegId(leg.id);
+              setCountryCode(leg.country_code);
+              setCurrency(leg.currency_code);
+            }
+            lastAppliedDate.current = today;
+          }
+        }
       }
       setLoaded(true);
     })();
@@ -85,9 +113,9 @@ export default function ExpenseScreen() {
   }, [db, params.id, isNew, activeTrip, userId]);
 
   /**
-   * The itinerary does the work: the leg covering the chosen date supplies the
-   * country and currency, so logging a purchase is three taps. Both stay
-   * editable for advance bookings and mid-day border crossings.
+   * Changing the date re-checks the itinerary. The initial country comes from
+   * the previous expense (or the first matching leg), so logging several
+   * purchases in the same place does not bounce you back to a different country.
    */
   const applyLegForDate = useCallback(
     async (nextDate: string) => {
@@ -102,7 +130,10 @@ export default function ExpenseScreen() {
   );
 
   useEffect(() => {
-    if (loaded && isNew) applyLegForDate(date);
+    if (!loaded || !isNew) return;
+    if (lastAppliedDate.current === date) return;
+    lastAppliedDate.current = date;
+    applyLegForDate(date);
   }, [loaded, isNew, date, applyLegForDate]);
 
   const rate = rateFor(currency);
@@ -245,7 +276,11 @@ export default function ExpenseScreen() {
           label="Date"
           value={date}
           onChange={setDate}
-          hint={isNew ? 'Changing the date re-checks your itinerary for the country.' : undefined}
+          hint={
+            isNew
+              ? 'Defaults to your last country. Changing the date re-checks the itinerary.'
+              : undefined
+          }
         />
 
         <CountryPicker
@@ -277,7 +312,7 @@ export default function ExpenseScreen() {
                   key={m.id}
                   onPress={() => setPaidBy(m.user_id)}
                   style={[styles.payer, active && styles.payerActive]}>
-                  <Text style={[styles.payerText, active && { color: '#0B0E14' }]}>
+                  <Text style={[styles.payerText, active && { color: onFill(colors.accent) }]}>
                     {m.display_name || 'Traveller'}
                     {m.user_id === userId ? ' (you)' : ''}
                   </Text>
@@ -307,38 +342,39 @@ function currencyOptions(countries: Country[], current: string): string[] {
   return Array.from(set);
 }
 
-const styles = StyleSheet.create({
-  amountInput: { fontSize: 34, fontWeight: '700', paddingVertical: spacing.lg },
-  conversionRow: { flexDirection: 'row', alignItems: 'center' },
-  currencyBadge: {
-    ...type.label,
-    color: colors.accent,
-    backgroundColor: colors.accentSoft,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-    overflow: 'hidden',
-  },
-  nzd: { ...type.title, color: colors.success },
-  nzdMissing: { ...type.label, color: colors.warning },
-  rateNote: { ...type.caption, color: colors.textFaint, marginTop: spacing.sm },
-  sectionLabel: {
-    ...type.label,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  payerRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
-  payer: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceRaised,
-  },
-  payerActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  payerText: { ...type.label, color: colors.textMuted },
-  noTrip: { ...type.body, color: colors.textMuted, textAlign: 'center' },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    amountInput: { fontSize: 34, fontWeight: '700', paddingVertical: spacing.lg },
+    conversionRow: { flexDirection: 'row', alignItems: 'center' },
+    currencyBadge: {
+      ...type.label,
+      color: c.accent,
+      backgroundColor: c.accentSoft,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 4,
+      borderRadius: radius.sm,
+      overflow: 'hidden',
+    },
+    nzd: { ...type.title, color: c.success },
+    nzdMissing: { ...type.label, color: c.warning },
+    rateNote: { ...type.caption, color: c.textFaint, marginTop: spacing.sm },
+    sectionLabel: {
+      ...type.label,
+      color: c.textMuted,
+      marginBottom: spacing.sm,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    payerRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+    payer: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: c.border,
+      backgroundColor: c.surfaceRaised,
+    },
+    payerActive: { backgroundColor: c.accent, borderColor: c.accent },
+    payerText: { ...type.label, color: c.textMuted },
+    noTrip: { ...type.body, color: c.textMuted, textAlign: 'center' },
+  });

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { isValidDate } from '../lib/dates';
-import { colors, radius, spacing, type } from '../theme/theme';
+import { Colors, radius, spacing, type } from '../theme/theme';
+import { useTheme, useThemedStyles } from '../theme/useTheme';
 
 /**
  * Plain `YYYY-MM-DD` text entry with auto-inserted dashes. Deliberately not a
@@ -21,6 +22,8 @@ export function DateField({
 }) {
   const [touched, setTouched] = useState(false);
   const invalid = touched && value.length > 0 && !isValidDate(value);
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
 
   function handleChange(raw: string) {
     const digits = raw.replace(/\D/g, '').slice(0, 8);
@@ -52,25 +55,26 @@ export function DateField({
   );
 }
 
-const styles = StyleSheet.create({
-  label: {
-    ...type.label,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  input: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    color: colors.text,
-    fontSize: 16,
-    letterSpacing: 1,
-  },
-  hint: { ...type.caption, color: colors.textFaint, marginTop: spacing.xs },
-  error: { ...type.caption, color: colors.danger, marginTop: spacing.xs },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    label: {
+      ...type.label,
+      color: c.textMuted,
+      marginBottom: spacing.sm,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    input: {
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      color: c.text,
+      fontSize: 16,
+      letterSpacing: 1,
+    },
+    hint: { ...type.caption, color: c.textFaint, marginTop: spacing.xs },
+    error: { ...type.caption, color: c.danger, marginTop: spacing.xs },
+  });

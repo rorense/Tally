@@ -22,6 +22,8 @@ const GLOW = 0x141d2e;
 const STROKE_TOP = 0x4bc5d9;
 const STROKE_BOTTOM = 0x4f8dff;
 const SLASH = 0xf2f5fa;
+/** The near-white slash disappears on the light splash background. */
+const SLASH_ON_LIGHT = 0x121826;
 
 // --- PNG encoding ------------------------------------------------------
 
@@ -163,9 +165,16 @@ interface Options {
   /** Flat white mark for Android's themed-icon slot. */
   monochrome?: boolean;
   scale?: number;
+  slash?: number;
 }
 
-function render({ size, background, monochrome = false, scale = 1 }: Options): Uint8Array {
+function render({
+  size,
+  background,
+  monochrome = false,
+  scale = 1,
+  slash: slashColour = SLASH,
+}: Options): Uint8Array {
   const out = new Uint8Array(size * size * 4);
   // Grid units per pixel, so anti-aliasing stays a pixel wide at any size.
   const unitsPerPixel = GRID / size / scale;
@@ -203,7 +212,7 @@ function render({ size, background, monochrome = false, scale = 1 }: Options): U
         const t = Math.min(1, Math.max(0, (gy - (512 - UPRIGHT_HALF_HEIGHT)) / (UPRIGHT_HALF_HEIGHT * 2)));
         paint(distance(gx, gy, upright), monochrome ? white : mixRgb(STROKE_TOP, STROKE_BOTTOM, t));
       }
-      paint(distance(gx, gy, slash), monochrome ? white : mixRgb(SLASH, SLASH, 0));
+      paint(distance(gx, gy, slash), monochrome ? white : mixRgb(slashColour, slashColour, 0));
 
       const d = (BAYER[y & 7][x & 7] + 0.5) / 64 - 0.5;
       const i = (y * size + x) * 4;
@@ -234,6 +243,11 @@ function write(name: string, size: number, pixels: Uint8Array): void {
 
 write('icon.png', 1024, render({ size: 1024, background: true }));
 write('splash-icon.png', 1024, render({ size: 1024, background: false }));
+write(
+  'splash-icon-light.png',
+  1024,
+  render({ size: 1024, background: false, slash: SLASH_ON_LIGHT })
+);
 write('favicon.png', 256, render({ size: 256, background: true }));
 write('android-icon-background.png', 1024, plate(1024, BG));
 write(

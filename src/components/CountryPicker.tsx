@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Country } from '../db/types';
-import { colors, radius, spacing, type } from '../theme/theme';
+import { Colors, radius, spacing, type } from '../theme/theme';
+import { useTheme, useThemedStyles } from '../theme/useTheme';
 
 export function CountryPicker({
   label,
@@ -16,6 +17,8 @@ export function CountryPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
 
   const selected = countries.find((c) => c.country_code === value) ?? null;
 
@@ -76,65 +79,66 @@ export function CountryPicker({
   );
 }
 
-const styles = StyleSheet.create({
-  label: {
-    ...type.label,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  trigger: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md + 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  triggerText: { color: colors.text, fontSize: 16 },
-  triggerPlaceholder: { color: colors.textFaint, fontSize: 16 },
-  currencyTag: {
-    ...type.caption,
-    color: colors.accent,
-    backgroundColor: colors.accentSoft,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-    overflow: 'hidden',
-  },
-  modal: { flex: 1, backgroundColor: colors.bg, paddingTop: spacing.xxl + spacing.lg },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  modalTitle: { ...type.title, color: colors.text },
-  close: { ...type.heading, color: colors.accent },
-  search: {
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    marginHorizontal: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    color: colors.text,
-    fontSize: 16,
-    marginBottom: spacing.md,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  rowName: { color: colors.text, fontSize: 16 },
-  rowCurrency: { ...type.label, color: colors.textMuted },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    label: {
+      ...type.label,
+      color: c.textMuted,
+      marginBottom: spacing.sm,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    trigger: {
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md + 2,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    triggerText: { color: c.text, fontSize: 16 },
+    triggerPlaceholder: { color: c.textFaint, fontSize: 16 },
+    currencyTag: {
+      ...type.caption,
+      color: c.accent,
+      backgroundColor: c.accentSoft,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: radius.sm,
+      overflow: 'hidden',
+    },
+    modal: { flex: 1, backgroundColor: c.bg, paddingTop: spacing.xxl + spacing.lg },
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      marginBottom: spacing.lg,
+    },
+    modalTitle: { ...type.title, color: c.text },
+    close: { ...type.heading, color: c.accent },
+    search: {
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      marginHorizontal: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      color: c.text,
+      fontSize: 16,
+      marginBottom: spacing.md,
+    },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    rowName: { color: c.text, fontSize: 16 },
+    rowCurrency: { ...type.label, color: c.textMuted },
+  });

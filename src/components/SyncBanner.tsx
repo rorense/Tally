@@ -2,7 +2,8 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import { useSync } from '../hooks/useSync';
-import { colors, radius, spacing, type } from '../theme/theme';
+import { Colors, radius, spacing, type } from '../theme/theme';
+import { useTheme, useThemedStyles } from '../theme/useTheme';
 
 function relativeTime(iso: string | null): string {
   if (!iso) return 'never';
@@ -21,6 +22,8 @@ function relativeTime(iso: string | null): string {
 export function SyncBanner() {
   const { configured, session } = useAuth();
   const { syncing, pending, lastPulledAt, online, onWifi, wifiBlocked } = useSyncStatus();
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
 
   if (!configured) return null;
 
@@ -69,21 +72,22 @@ function useSyncStatus() {
   };
 }
 
-const styles = StyleSheet.create({
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    marginBottom: spacing.lg,
-  },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  text: { ...type.caption, color: colors.textMuted, flex: 1 },
-  meta: { ...type.caption, color: colors.textFaint },
-  action: { ...type.caption, color: colors.accent, fontWeight: '700' },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    banner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: radius.pill,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm + 2,
+      marginBottom: spacing.lg,
+    },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    text: { ...type.caption, color: c.textMuted, flex: 1 },
+    meta: { ...type.caption, color: c.textFaint },
+    action: { ...type.caption, color: c.accent, fontWeight: '700' },
+  });

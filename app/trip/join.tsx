@@ -7,7 +7,8 @@ import { useApp } from '../../src/hooks/useApp';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useSync } from '../../src/hooks/useSync';
 import { supabase } from '../../src/lib/supabase';
-import { colors, spacing, type } from '../../src/theme/theme';
+import { Colors, spacing, type } from '../../src/theme/theme';
+import { useThemedStyles } from '../../src/theme/useTheme';
 
 export default function JoinTripScreen() {
   const db = useSQLiteContext();
@@ -15,6 +16,7 @@ export default function JoinTripScreen() {
   const { refresh, setActiveTrip } = useApp();
   const { syncNow } = useSync();
   const params = useLocalSearchParams<{ code?: string }>();
+  const styles = useThemedStyles(createStyles);
 
   const [code, setCode] = useState(params.code?.toUpperCase() ?? '');
   const [displayName, setDisplayName] = useState('');
@@ -106,7 +108,8 @@ export default function JoinTripScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  codeInput: { fontSize: 22, letterSpacing: 3, fontWeight: '700', textAlign: 'center' },
-  error: { ...type.caption, color: colors.danger, marginBottom: spacing.md },
-});
+const createStyles = (c: Colors) =>
+  StyleSheet.create({
+    codeInput: { fontSize: 22, letterSpacing: 3, fontWeight: '700', textAlign: 'center' },
+    error: { ...type.caption, color: c.danger, marginBottom: spacing.md },
+  });

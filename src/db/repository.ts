@@ -352,7 +352,10 @@ export async function listExpenses(
 }
 
 export async function getExpense(db: SQLiteDatabase, id: string): Promise<Expense | null> {
-  return db.getFirstAsync<Expense>('SELECT * FROM expenses WHERE id = ?', id);
+  return db.getFirstAsync<Expense>(
+    'SELECT * FROM expenses WHERE id = ? AND deleted_at IS NULL',
+    id
+  );
 }
 
 /** Most recently logged expense on a trip. Used to sticky-default country on the next entry. */

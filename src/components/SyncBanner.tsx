@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useApp } from '../hooks/useApp';
 import { useAuth } from '../hooks/useAuth';
 import { useSync } from '../hooks/useSync';
 import { Colors, radius, spacing, type } from '../theme/theme';
@@ -66,9 +67,11 @@ export function SyncBanner() {
 
 function useSyncStatus() {
   const sync = useSync();
+  const { settings } = useApp();
   return {
     ...sync,
-    wifiBlocked: sync.online && !sync.onWifi && sync.pending > 0,
+    wifiBlocked:
+      settings.wifiOnlySync && sync.online && !sync.onWifi && sync.pending > 0,
   };
 }
 

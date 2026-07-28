@@ -17,6 +17,7 @@ import {
 import { CATEGORIES, type Category, type Expense } from '../../src/db/types';
 import { daysBetween, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact } from '../../src/lib/money';
+import { budgetPaceNzd } from '../../src/lib/pace';
 import { useApp } from '../../src/hooks/useApp';
 import { useSync } from '../../src/hooks/useSync';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
@@ -94,7 +95,12 @@ export default function DashboardScreen() {
     tripDays
   );
   // Pacing only makes sense once the trip has actually started.
-  const expectedPace = budget > 0 && elapsed > 0 ? (budget / tripDays) * elapsed : 0;
+  const expectedPace = budgetPaceNzd(
+    budget,
+    activeTrip.start_date,
+    activeTrip.end_date,
+    elapsed
+  );
   const onTrack = expectedPace === 0 || spent <= expectedPace;
 
   return (

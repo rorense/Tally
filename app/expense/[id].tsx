@@ -150,12 +150,20 @@ export default function ExpenseScreen() {
 
   const nzdPreview = useMemo(() => {
     if (parsedAmount === null || effectiveRate === null) return null;
+    if (
+      existing &&
+      keptRate !== null &&
+      existing.amount === parsedAmount &&
+      existing.currency === currency
+    ) {
+      return existing.amount_nzd;
+    }
     return convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct);
-  }, [parsedAmount, effectiveRate, settings.cardMarkupPct]);
+  }, [parsedAmount, effectiveRate, settings.cardMarkupPct, existing, keptRate, currency]);
 
   async function handleSave() {
     if (!activeTrip) return Alert.alert('No trip', 'Create a trip first.');
-    if (parsedAmount === null || parsedAmount === 0) {
+    if (parsedAmount === null || parsedAmount <= 0) {
       return Alert.alert('Amount required', 'Enter how much you spent.');
     }
     if (!countryCode) return Alert.alert('Country required', 'Pick where you spent it.');
@@ -167,6 +175,14 @@ export default function ExpenseScreen() {
       );
     }
 
+    // Reopening an expense and saving without changing amount/currency must not
+    // rewrite history when the card-markup setting has moved in the meantime.
+    const unchanged =
+      existing !== null &&
+      keptRate !== null &&
+      existing.amount === parsedAmount &&
+      existing.currency === currency;
+
     const payload = {
       trip_id: activeTrip.id,
       leg_id: legId,
@@ -177,7 +193,9 @@ export default function ExpenseScreen() {
       currency,
       // Frozen at entry time so past totals never shift when rates move.
       rate_to_nzd: effectiveRate,
-      amount_nzd: convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct),
+      amount_nzd: unchanged
+        ? existing.amount_nzd
+        : convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct),
       spent_at: existing?.spent_at ?? nowIso(),
       local_date: date,
       paid_by: paidBy,
@@ -290,6 +308,8 @@ export default function ExpenseScreen() {
           onChange={(c) => {
             setCountryCode(c.country_code);
             setCurrency(c.currency_code);
+            // Manual override must not keep pointing at a leg for another country.
+            setLegId(null);
           }}
         />
 

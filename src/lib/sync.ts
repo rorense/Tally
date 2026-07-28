@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { getSyncState, setSyncState, upsertMember } from '../db/repository';
 import { supabase } from './supabase';
+import { normaliseForPostgres, normaliseForSqlite } from './syncCodec';
 
 /**
  * Tables synced to Supabase, in dependency order. Parents push before children
@@ -16,9 +17,6 @@ const SYNCED_TABLES = [
 
 type SyncedTable = (typeof SYNCED_TABLES)[number];
 
-/** `dirty` is a local bookkeeping flag and must never be sent to Postgres. */
-const LOCAL_ONLY_COLUMNS = new Set(['dirty']);
-
 const LAST_PULLED_KEY = 'last_pulled_at';
 
 export interface SyncResult {
@@ -26,37 +24,6 @@ export interface SyncResult {
   pushed: number;
   pulled: number;
   error?: string;
-}
-
-function stripLocalColumns(row: Record<string, unknown>) {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(row)) {
-    if (!LOCAL_ONLY_COLUMNS.has(k)) out[k] = v;
-  }
-  return out;
-}
-
-/**
- * SQLite has no boolean or null-date types, so empty strings creep in where
- * Postgres wants a real null.
- */
-function normaliseForPostgres(row: Record<string, unknown>) {
-  const out = stripLocalColumns(row);
-  for (const [k, v] of Object.entries(out)) {
-    if (v === '') out[k] = null;
-  }
-  return out;
-}
-
-function normaliseForSqlite(row: Record<string, unknown>) {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(row)) {
-    if (v === null || v === undefined) out[k] = null;
-    else if (typeof v === 'boolean') out[k] = v ? 1 : 0;
-    else if (typeof v === 'object') out[k] = JSON.stringify(v);
-    else out[k] = v;
-  }
-  return out;
 }
 
 async function columnsOf(db: SQLiteDatabase, table: string): Promise<string[]> {
@@ -77,11 +44,18 @@ async function pushTable(db: SQLiteDatabase, table: SyncedTable): Promise<number
   const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
   if (error) throw new Error(`push ${table}: ${error.message}`);
 
-  const ids = dirtyRows.map((r) => r.id as string);
-  const placeholders = ids.map(() => '?').join(',');
-  await db.runAsync(`UPDATE ${table} SET dirty = 0 WHERE id IN (${placeholders})`, ids);
+  // Only clear dirty when the row is still the version we just pushed. An edit
+  // during the network await bumps updated_at and must stay dirty so the next
+  // pass sends it.
+  for (const row of dirtyRows) {
+    await db.runAsync(
+      `UPDATE ${table} SET dirty = 0 WHERE id = ? AND updated_at = ?`,
+      row.id as string,
+      row.updated_at as string
+    );
+  }
 
-  return ids.length;
+  return dirtyRows.length;
 }
 
 /**
@@ -165,6 +139,13 @@ async function ensureSelfMembership(
   }
 }
 
+async function serverNow(): Promise<string> {
+  if (!supabase) return new Date().toISOString();
+  const { data, error } = await supabase.rpc('server_now');
+  if (!error && typeof data === 'string') return data;
+  return new Date().toISOString();
+}
+
 /**
  * One full sync pass. Push before pull so local work is never overwritten by a
  * server copy that predates it.
@@ -189,9 +170,11 @@ export async function runSync(db: SQLiteDatabase, displayName = ''): Promise<Syn
     }
 
     const since = await getSyncState(db, LAST_PULLED_KEY);
-    // Read the server clock before pulling, so rows written during this pass
-    // are picked up next time rather than being skipped.
-    const startedAt = new Date().toISOString();
+    // Prefer the database clock so a phone set to the wrong timezone or with a
+    // skewed clock cannot park the watermark in the future and permanently
+    // skip partner writes. Fall back to the device clock if the RPC is absent
+    // on an older project.
+    const startedAt = await serverNow();
 
     for (const table of SYNCED_TABLES) {
       pulled += await pullTable(db, table, since);

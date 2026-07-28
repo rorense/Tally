@@ -31,7 +31,7 @@ const SyncContext = createContext<SyncContextValue | null>(null);
 export function SyncProvider({ children }: { children: ReactNode }) {
   const db = useSQLiteContext();
   const { session } = useAuth();
-  const { settings, refresh } = useApp();
+  const { settings, refresh, revision } = useApp();
 
   const [syncing, setSyncing] = useState(false);
   const [pending, setPending] = useState(0);
@@ -53,7 +53,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refreshStatus();
-  }, [refreshStatus, settings.activeTripId]);
+  }, [refreshStatus, settings.activeTripId, revision]);
 
   useEffect(() => {
     const unsub = NetInfo.addEventListener(setNet);

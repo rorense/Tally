@@ -6,6 +6,7 @@ import { Button, Card, Caption, Field, H1, Screen } from '../../src/components/u
 import { useApp } from '../../src/hooks/useApp';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useSync } from '../../src/hooks/useSync';
+import { isCompleteJoinCode, normalizeJoinCode } from '../../src/lib/joinCode';
 import { supabase } from '../../src/lib/supabase';
 import { Colors, spacing, type } from '../../src/theme/theme';
 import { useThemedStyles } from '../../src/theme/useTheme';
@@ -13,18 +14,18 @@ import { useThemedStyles } from '../../src/theme/useTheme';
 export default function JoinTripScreen() {
   const db = useSQLiteContext();
   const { session } = useAuth();
-  const { refresh, setActiveTrip } = useApp();
+  const { refresh, setActiveTrip, settings, updateSetting } = useApp();
   const { syncNow } = useSync();
   const params = useLocalSearchParams<{ code?: string }>();
   const styles = useThemedStyles(createStyles);
 
-  const [code, setCode] = useState(params.code?.toUpperCase() ?? '');
-  const [displayName, setDisplayName] = useState('');
+  const [code, setCode] = useState(params.code ? normalizeJoinCode(params.code) : '');
+  const [displayName, setDisplayName] = useState(settings.displayName);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (params.code) setCode(params.code.toUpperCase());
+    if (params.code) setCode(normalizeJoinCode(params.code));
   }, [params.code]);
 
   async function join() {
@@ -32,15 +33,23 @@ export default function JoinTripScreen() {
 
     if (!supabase) return setError('This build has no sync credentials configured.');
     if (!session) return setError('Sign in first, then enter the code.');
-    if (code.trim().length < 4) return setError('Enter the code from your travel partner.');
+    const normalised = normalizeJoinCode(code);
+    if (!isCompleteJoinCode(normalised)) {
+      return setError('Enter the eight-character code from your travel partner.');
+    }
 
     setBusy(true);
     try {
+      const name = displayName.trim();
+      if (name && name !== settings.displayName) {
+        await updateSetting('displayName', name);
+      }
+
       // The lookup runs inside a security definer function: RLS only shows you
       // trips you already belong to, so a non-member cannot find one by code.
       const { data, error: rpcError } = await supabase.rpc('join_trip_with_code', {
-        p_code: code.trim().toUpperCase(),
-        p_display_name: displayName.trim(),
+        p_code: normalised,
+        p_display_name: name,
       });
 
       if (rpcError) {
@@ -79,7 +88,7 @@ export default function JoinTripScreen() {
         <Field
           label="Trip code"
           value={code}
-          onChangeText={(v) => setCode(v.toUpperCase())}
+          onChangeText={(v) => setCode(normalizeJoinCode(v))}
           autoCapitalize="characters"
           autoCorrect={false}
           placeholder="EURO-4K7P"

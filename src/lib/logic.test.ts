@@ -116,6 +116,15 @@ test('parseAmount accepts the comma decimal separator used across Europe', () =>
   assert.equal(parseAmount('abc'), null);
 });
 
+test('parseAmount handles European and US thousand separators', () => {
+  assert.equal(parseAmount('1.234,56'), 1234.56);
+  assert.equal(parseAmount('1,234.56'), 1234.56);
+  assert.equal(parseAmount('1.234'), 1234);
+  assert.equal(parseAmount('1,234'), 1234);
+  assert.equal(parseAmount('1.234.567'), 1234567);
+  assert.equal(parseAmount('-12,50'), -12.5);
+});
+
 test('round2 avoids binary floating point drift', () => {
   assert.equal(round2(1.005), 1.01);
   assert.equal(round2(0.1 + 0.2), 0.3);

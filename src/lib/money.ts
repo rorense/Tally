@@ -61,10 +61,35 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-/** Tolerant of the comma decimal separator used across most of Europe. */
+/** Tolerant of European number formats: `12,50`, `1.234,56`, and `1,234.56`. */
 export function parseAmount(input: string): number | null {
-  const cleaned = input.replace(/[^0-9.,-]/g, '').replace(',', '.');
-  if (!cleaned) return null;
+  let cleaned = input.replace(/[^0-9.,-]/g, '');
+  if (!cleaned || cleaned === '-' || cleaned === '.' || cleaned === ',') return null;
+
+  const lastComma = cleaned.lastIndexOf(',');
+  const lastDot = cleaned.lastIndexOf('.');
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    // Whichever separator appears last is the decimal; the other is thousands.
+    if (lastComma > lastDot) {
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+    } else {
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  } else if (lastComma >= 0) {
+    const commas = cleaned.split(',').length - 1;
+    const after = cleaned.length - lastComma - 1;
+    // Multiple commas, or a single comma with three trailing digits, are thousands.
+    cleaned =
+      commas > 1 || after === 3 ? cleaned.replace(/,/g, '') : cleaned.replace(',', '.');
+  } else if (lastDot >= 0) {
+    const dots = cleaned.split('.').length - 1;
+    const after = cleaned.length - lastDot - 1;
+    // `1.234.567` or `1.234` (exactly three fraction digits) read as thousands.
+    // `12.5` / `12.50` keep the decimal point.
+    if (dots > 1 || after === 3) cleaned = cleaned.replace(/\./g, '');
+  }
+
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }

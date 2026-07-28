@@ -13,6 +13,7 @@ import {
 import type { Category, Country } from '../../src/db/types';
 import { dateRange, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact, round2 } from '../../src/lib/money';
+import { budgetPaceNzd } from '../../src/lib/pace';
 import { useApp } from '../../src/hooks/useApp';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
@@ -81,15 +82,14 @@ export default function ChartsScreen() {
   const cumulativeData = useMemo(() => {
     if (!activeTrip) return [];
     const budget = activeTrip.total_budget_nzd;
-    const totalDays = dailyData.length || 1;
     let running = 0;
     return dailyData.map((d, i) => {
       running = round2(running + d.spend);
       return {
         index: i,
         actual: running,
-        // Straight-line budget pace, for comparison against the actual curve.
-        pace: budget > 0 ? round2((budget / totalDays) * (i + 1)) : 0,
+        // Straight-line budget across the whole trip, not just the days so far.
+        pace: budgetPaceNzd(budget, activeTrip.start_date, activeTrip.end_date, i + 1),
       };
     });
   }, [dailyData, activeTrip]);

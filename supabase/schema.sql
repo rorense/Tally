@@ -107,14 +107,21 @@ set search_path = ''
 as $$
 declare
   v_trip_id uuid;
+  v_code text;
 begin
   if (select auth.uid()) is null then
     raise exception 'Not signed in';
   end if;
 
+  -- Accept both EURO-4K7P and EURO4K7P; partners type these from a phone screen.
+  v_code := upper(regexp_replace(trim(p_code), '[^A-Za-z0-9]', '', 'g'));
+  if length(v_code) = 8 then
+    v_code := substr(v_code, 1, 4) || '-' || substr(v_code, 5, 4);
+  end if;
+
   select id into v_trip_id
   from public.trips
-  where join_code = upper(trim(p_code)) and deleted_at is null;
+  where join_code = v_code and deleted_at is null;
 
   if v_trip_id is null then
     raise exception 'Invalid code';
@@ -130,6 +137,19 @@ begin
   return v_trip_id;
 end;
 $$ language plpgsql security definer;
+
+-- Wall clock used as the sync watermark. Must be the database's clock so a
+-- phone set hours ahead cannot skip partner writes forever.
+create or replace function public.server_now()
+returns timestamptz
+language sql
+stable
+set search_path = ''
+as $$
+  select now();
+$$;
+
+grant execute on function public.server_now() to authenticated;
 
 -- ---------------------------------------------------------------- RLS
 

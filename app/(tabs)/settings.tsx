@@ -35,7 +35,7 @@ export default function SettingsScreen() {
   const { activeTrip, trips, setActiveTrip, settings, updateSetting, refresh } = useApp();
   const { session, email, configured, signOut } = useAuth();
   const { rates, refresh: refreshRates, refreshing } = useRates();
-  const { syncNow, syncing, pending } = useSync();
+  const { syncNow, syncing, pending, lastError } = useSync();
   const styles = useThemedStyles(createStyles);
   const { colors, scheme } = useTheme();
 
@@ -214,13 +214,21 @@ export default function SettingsScreen() {
               />
             </View>
             <View style={{ height: spacing.lg }} />
+            {lastError ? (
+              <Text style={styles.syncError} numberOfLines={4}>
+                {lastError}
+              </Text>
+            ) : null}
             <Button
               title={syncing ? 'Syncing' : pending > 0 ? `Sync now (${pending} waiting)` : 'Sync now'}
               variant="secondary"
               loading={syncing}
               onPress={async () => {
-                await syncNow('manual');
+                const result = await syncNow('manual');
                 refresh();
+                if (!result.ok && result.error) {
+                  Alert.alert('Sync failed', result.error);
+                }
               }}
             />
             <View style={{ height: spacing.md }} />
@@ -352,6 +360,7 @@ const createStyles = (c: Colors) =>
     member: { ...type.body, color: c.text, paddingVertical: 2 },
     switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
     switchLabel: { ...type.body, color: c.text },
+    syncError: { ...type.caption, color: c.danger, marginBottom: spacing.md, lineHeight: 17 },
     segmented: {
       flexDirection: 'row',
       gap: spacing.sm,

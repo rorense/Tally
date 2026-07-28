@@ -159,15 +159,27 @@ alter table public.trip_legs enable row level security;
 alter table public.category_budgets enable row level security;
 alter table public.expenses enable row level security;
 
+-- Split trip policies by command. A FOR ALL member policy also covers INSERT,
+-- and for a brand-new trip `is_trip_member` is false, so the insert would be
+-- denied even when a separate insert policy exists (depending on how policies
+-- were applied). Keeping INSERT on its own policy avoids that trap.
 drop policy if exists trips_member_access on public.trips;
-create policy trips_member_access on public.trips
-  for all using (private.is_trip_member(id))
+drop policy if exists trips_select on public.trips;
+drop policy if exists trips_update on public.trips;
+drop policy if exists trips_delete on public.trips;
+drop policy if exists trips_insert_own on public.trips;
+
+create policy trips_select on public.trips
+  for select using (private.is_trip_member(id));
+
+create policy trips_update on public.trips
+  for update using (private.is_trip_member(id))
   with check (private.is_trip_member(id));
 
--- A newly created trip has no members yet, so the creator would be locked out
--- of their own insert. This lets an authenticated user create a trip; the app
--- immediately inserts the matching trip_members row.
-drop policy if exists trips_insert_own on public.trips;
+create policy trips_delete on public.trips
+  for delete using (private.is_trip_member(id));
+
+-- Authenticated users may create a trip; the app then writes trip_members.
 create policy trips_insert_own on public.trips
   for insert to authenticated with check (true);
 
@@ -197,4 +209,7 @@ create policy expenses_member_access on public.expenses
   for all using (private.is_trip_member(trip_id))
   with check (private.is_trip_member(trip_id));
 
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
 grant execute on function public.join_trip_with_code(text, text) to authenticated;
+grant execute on function public.server_now() to authenticated;

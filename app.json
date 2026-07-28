@@ -39,7 +39,8 @@
             "backgroundColor": "#0B0E14"
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "updates": {
       "enabled": true,
@@ -51,6 +52,13 @@
     },
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c363d5f4-4bbf-441b-a57c-9ce9e36d8af1"
+      }
+    },
+    "owner": "dryguy112"
   }
 }

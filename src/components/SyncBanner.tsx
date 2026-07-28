@@ -22,7 +22,8 @@ function relativeTime(iso: string | null): string {
  */
 export function SyncBanner() {
   const { configured, session } = useAuth();
-  const { syncing, pending, lastPulledAt, online, onWifi, wifiBlocked } = useSyncStatus();
+  const { syncing, pending, lastPulledAt, online, onWifi, wifiBlocked, lastError, syncNow } =
+    useSyncStatus();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
 
@@ -40,28 +41,44 @@ export function SyncBanner() {
 
   const label = syncing
     ? 'Syncing'
-    : !online
-      ? `Offline${pending > 0 ? ` \u00B7 ${pending} waiting` : ''}`
-      : wifiBlocked
-        ? `On cellular \u00B7 ${pending} waiting for wifi`
-        : pending > 0
-          ? `${pending} waiting to sync`
-          : `Synced ${relativeTime(lastPulledAt)}`;
+    : lastError && pending > 0
+      ? `Sync failed \u00B7 ${pending} waiting`
+      : !online
+        ? `Offline${pending > 0 ? ` \u00B7 ${pending} waiting` : ''}`
+        : wifiBlocked
+          ? `On cellular \u00B7 ${pending} waiting for wifi`
+          : pending > 0
+            ? `${pending} waiting to sync`
+            : `Synced ${relativeTime(lastPulledAt)}`;
 
   const tint = syncing
     ? colors.accent
-    : !online || wifiBlocked
+    : lastError || !online || wifiBlocked || pending > 0
       ? colors.warning
-      : pending > 0
-        ? colors.warning
-        : colors.success;
+      : colors.success;
+
+  const canForce =
+    !syncing && (pending > 0 || Boolean(lastError) || wifiBlocked || !online);
 
   return (
-    <View style={styles.banner}>
+    <Pressable
+      style={styles.banner}
+      disabled={!canForce}
+      onPress={() => {
+        if (canForce) syncNow('manual');
+      }}>
       <View style={[styles.dot, { backgroundColor: tint }]} />
-      <Text style={styles.text}>{label}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.text}>{label}</Text>
+        {lastError && pending > 0 ? (
+          <Text style={styles.error} numberOfLines={2}>
+            {lastError}
+          </Text>
+        ) : null}
+      </View>
       {!onWifi && online ? <Text style={styles.meta}>cellular</Text> : null}
-    </View>
+      {canForce ? <Text style={styles.action}>{syncing ? '' : 'Sync'}</Text> : null}
+    </Pressable>
   );
 }
 
@@ -90,7 +107,8 @@ const createStyles = (c: Colors) =>
       marginBottom: spacing.lg,
     },
     dot: { width: 8, height: 8, borderRadius: 4 },
-    text: { ...type.caption, color: c.textMuted, flex: 1 },
+    text: { ...type.caption, color: c.textMuted },
+    error: { ...type.caption, color: c.danger, marginTop: 2 },
     meta: { ...type.caption, color: c.textFaint },
     action: { ...type.caption, color: c.accent, fontWeight: '700' },
   });

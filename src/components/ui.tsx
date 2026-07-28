@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -55,18 +55,49 @@ export function Field({
   label,
   hint,
   containerStyle,
+  revealable,
+  secureTextEntry,
+  style,
   ...props
-}: TextInputProps & { label?: string; hint?: string; containerStyle?: ViewStyle }) {
+}: TextInputProps & {
+  label?: string;
+  hint?: string;
+  containerStyle?: ViewStyle;
+  /** Show a Show/Hide control when used with secureTextEntry. */
+  revealable?: boolean;
+}) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
+  const [revealed, setRevealed] = useState(false);
+  const hide = Boolean(secureTextEntry) && !(revealable && revealed);
+
   return (
     <View style={[{ marginBottom: spacing.lg }, containerStyle]}>
       {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
-      <TextInput
-        placeholderTextColor={colors.textFaint}
-        {...props}
-        style={[styles.input, props.style]}
-      />
+      {revealable ? (
+        <View style={styles.inputRow}>
+          <TextInput
+            placeholderTextColor={colors.textFaint}
+            {...props}
+            secureTextEntry={hide}
+            style={[styles.inputBare, style]}
+          />
+          <Pressable
+            onPress={() => setRevealed((r) => !r)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={revealed ? 'Hide password' : 'Show password'}>
+            <Text style={styles.reveal}>{revealed ? 'Hide' : 'Show'}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <TextInput
+          placeholderTextColor={colors.textFaint}
+          {...props}
+          secureTextEntry={secureTextEntry}
+          style={[styles.input, style]}
+        />
+      )}
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
@@ -219,6 +250,23 @@ const createStyles = (c: Colors) =>
       color: c.text,
       fontSize: 16,
     },
+    inputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingRight: spacing.md,
+    },
+    inputBare: {
+      flex: 1,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      color: c.text,
+      fontSize: 16,
+    },
+    reveal: { ...type.label, color: c.accent, paddingHorizontal: spacing.sm },
     hint: { ...type.caption, color: c.textFaint, marginTop: spacing.xs },
     button: {
       borderRadius: radius.md,

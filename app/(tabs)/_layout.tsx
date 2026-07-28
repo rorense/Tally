@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { ColorValue, Text } from 'react-native';
+import { TripSwitcherHeader } from '../../src/components/TripSwitcherHeader';
 import { spacing } from '../../src/theme/theme';
 import { useTheme } from '../../src/theme/useTheme';
 
@@ -41,6 +42,7 @@ export default function TabsLayout() {
         name="expenses"
         options={{
           title: 'Expenses',
+          headerTitle: () => <TripSwitcherHeader section="Expenses" />,
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u2261'} color={color} />,
         }}
       />
@@ -48,6 +50,7 @@ export default function TabsLayout() {
         name="charts"
         options={{
           title: 'Charts',
+          headerTitle: () => <TripSwitcherHeader section="Charts" />,
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u25E7'} color={color} />,
         }}
       />

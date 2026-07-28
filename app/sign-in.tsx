@@ -91,6 +91,7 @@ export default function SignInScreen() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          revealable
           autoCapitalize="none"
           textContentType="password"
           placeholder="At least 6 characters"

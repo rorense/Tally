@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react';
 import { AppState } from 'react-native';
-import { countPendingChanges, getLastPulledAt, runSync, SyncTrigger } from '../lib/sync';
+import { countPendingChanges, getLastPulledAt, runSync, SyncResult, SyncTrigger } from '../lib/sync';
 import { isSyncConfigured } from '../lib/supabase';
 import { useApp } from './useApp';
 import { useAuth } from './useAuth';
@@ -23,7 +23,7 @@ interface SyncContextValue {
   lastError: string | null;
   online: boolean;
   onWifi: boolean;
-  syncNow: (trigger: SyncTrigger) => Promise<void>;
+  syncNow: (trigger: SyncTrigger) => Promise<SyncResult>;
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null);
@@ -63,14 +63,18 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
   const syncNow = useCallback(
     async (trigger: SyncTrigger) => {
-      if (!isSyncConfigured || !session || inFlight.current) return;
+      if (!isSyncConfigured || !session || inFlight.current) {
+        return { ok: false, pushed: 0, pulled: 0, error: !session ? 'Not signed in' : undefined };
+      }
 
       // Manual pull-to-refresh overrides the wifi-only preference: the user is
       // standing there asking for it, so honour the request.
       if (trigger !== 'manual') {
         const state = await NetInfo.fetch();
-        if (!state.isConnected) return;
-        if (wifiOnly && state.type !== 'wifi') return;
+        if (!state.isConnected) return { ok: false, pushed: 0, pulled: 0, error: 'Offline' };
+        if (wifiOnly && state.type !== 'wifi') {
+          return { ok: false, pushed: 0, pulled: 0, error: 'Waiting for wifi' };
+        }
       }
 
       inFlight.current = true;
@@ -78,8 +82,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       try {
         const result = await runSync(db, settings.displayName);
         setLastError(result.ok ? null : (result.error ?? 'Sync failed'));
+        if (!result.ok && result.error) {
+          console.warn('[sync]', result.error);
+        }
         await refreshStatus();
         if (result.ok && result.pulled > 0) refresh();
+        return result;
       } finally {
         inFlight.current = false;
         setSyncing(false);

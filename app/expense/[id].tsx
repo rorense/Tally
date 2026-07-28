@@ -294,6 +294,8 @@ export default function ExpenseScreen() {
           label="Date"
           value={date}
           onChange={setDate}
+          minimumDate={activeTrip.start_date}
+          maximumDate={activeTrip.end_date}
           hint={
             isNew
               ? 'Defaults to your last country. Changing the date re-checks the itinerary.'

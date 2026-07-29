@@ -291,7 +291,7 @@ export default function DashboardScreen() {
                   {e.description || e.category}
                 </Text>
                 <Text style={styles.expenseMeta}>
-                  {`${e.is_preflight === 1 ? 'Preflight' : formatShortDate(e.local_date)} \u00B7 ${e.country_code}`}
+                  {`${e.is_pretrip === 1 ? 'Pretrip' : formatShortDate(e.local_date)} \u00B7 ${e.country_code}`}
                 </Text>
               </View>
               <Text style={styles.expenseAmount}>{formatNzd(e.amount_nzd)}</Text>

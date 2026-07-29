@@ -195,7 +195,7 @@ export default function ShopbackScreen() {
 
       {items.length === 0 ? (
         <EmptyState
-          title={`No ${filter.toLowerCase()} claims`}
+          title={filter === 'All' ? 'No claims' : `No ${filter.toLowerCase()} claims`}
           subtitle="Try another filter, or add ShopBack on an expense."
         />
       ) : (
@@ -216,7 +216,7 @@ export default function ShopbackScreen() {
                     {item.description || item.category}
                   </Text>
                   <Text style={styles.claimMeta}>
-                    {item.is_preflight === 1 ? 'Preflight' : formatLongDate(item.local_date)} ·{' '}
+                    {item.is_pretrip === 1 ? 'Pretrip' : formatLongDate(item.local_date)} ·{' '}
                     {item.category} · {valueLabel}
                   </Text>
                 </View>
@@ -240,7 +240,7 @@ export default function ShopbackScreen() {
                 <View style={styles.actions}>
                   <View style={{ flex: 1 }}>
                     <Button
-                      title="Confirmed"
+                      title="Confirm"
                       onPress={() => setStatus(item.id, 'confirmed')}
                     />
                   </View>

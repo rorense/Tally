@@ -63,7 +63,7 @@ export default function ExpenseScreen() {
   const [members, setMembers] = useState<TripMember[]>([]);
 
   const [date, setDate] = useState(todayLocal());
-  const [isPreflight, setIsPreflight] = useState(false);
+  const [isPretrip, setIsPretrip] = useState(false);
   const [countryCode, setCountryCode] = useState<string | null>(null);
   const [currency, setCurrency] = useState('EUR');
   const [legId, setLegId] = useState<string | null>(null);
@@ -76,9 +76,9 @@ export default function ExpenseScreen() {
   // Tracks the date we last applied an itinerary leg for, so changing the date
   // re-infers country, but opening a fresh form keeps the last-used country.
   const lastAppliedDate = useRef<string | null>(null);
-  // Remembers country/currency/leg when toggling Preflight on, so turning it
+  // Remembers country/currency/leg when toggling Pretrip on, so turning it
   // off restores the trip-day defaults instead of leaving NZ stuck on.
-  const beforePreflight = useRef<{
+  const beforePretrip = useRef<{
     countryCode: string | null;
     currency: string;
     legId: string | null;
@@ -100,7 +100,7 @@ export default function ExpenseScreen() {
         if (cancelled || !e) return;
         setExisting(e);
         setDate(e.local_date);
-        setIsPreflight(e.is_preflight === 1);
+        setIsPretrip(e.is_pretrip === 1);
         setCountryCode(e.country_code);
         setCurrency(e.currency);
         setLegId(e.leg_id);
@@ -159,21 +159,21 @@ export default function ExpenseScreen() {
   );
 
   useEffect(() => {
-    if (!loaded || !isNew || isPreflight) return;
+    if (!loaded || !isNew || isPretrip) return;
     if (lastAppliedDate.current === date) return;
     lastAppliedDate.current = date;
     applyLegForDate(date);
-  }, [loaded, isNew, isPreflight, date, applyLegForDate]);
+  }, [loaded, isNew, isPretrip, date, applyLegForDate]);
 
-  function setPreflight(next: boolean) {
-    if (next && !isPreflight) {
-      beforePreflight.current = { countryCode, currency, legId };
+  function setPretrip(next: boolean) {
+    if (next && !isPretrip) {
+      beforePretrip.current = { countryCode, currency, legId };
       setCountryCode('NZ');
       setCurrency('NZD');
       setLegId(null);
-    } else if (!next && isPreflight) {
-      const prev = beforePreflight.current;
-      beforePreflight.current = null;
+    } else if (!next && isPretrip) {
+      const prev = beforePretrip.current;
+      beforePretrip.current = null;
       if (prev) {
         setCountryCode(prev.countryCode);
         setCurrency(prev.currency);
@@ -182,7 +182,7 @@ export default function ExpenseScreen() {
         applyLegForDate(date);
       }
     }
-    setIsPreflight(next);
+    setIsPretrip(next);
   }
 
   const rate = rateFor(currency);
@@ -237,10 +237,10 @@ export default function ExpenseScreen() {
     if (!description.trim()) {
       return Alert.alert('Description required', 'Say what the purchase was.');
     }
-    if (!isPreflight && !countryCode) {
+    if (!isPretrip && !countryCode) {
       return Alert.alert('Country required', 'Pick where you spent it.');
     }
-    if (!isPreflight && !isValidDate(date)) {
+    if (!isPretrip && !isValidDate(date)) {
       return Alert.alert('Check the date', 'Use a real YYYY-MM-DD date.');
     }
     if (effectiveRate === null) {
@@ -307,21 +307,21 @@ export default function ExpenseScreen() {
 
     const payload = {
       trip_id: activeTrip.id,
-      leg_id: isPreflight ? null : legId,
-      country_code: isPreflight ? 'NZ' : countryCode!,
+      leg_id: isPretrip ? null : legId,
+      country_code: isPretrip ? 'NZ' : countryCode!,
       category,
       description: description.trim(),
       amount: parsedAmount,
-      currency: isPreflight ? currency || 'NZD' : currency,
+      currency: isPretrip ? currency || 'NZD' : currency,
       // Frozen at entry time so past totals never shift when rates move.
       rate_to_nzd: effectiveRate,
       amount_nzd: unchanged
         ? existing.amount_nzd
         : convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct),
       spent_at: existing?.spent_at ?? nowIso(),
-      // Preflight keeps a date for the NOT NULL column; grouping uses is_preflight.
+      // Pretrip keeps a date for the NOT NULL column; grouping uses is_pretrip.
       local_date: isValidDate(date) ? date : activeTrip.start_date,
-      is_preflight: isPreflight ? 1 : 0,
+      is_pretrip: isPretrip ? 1 : 0,
       paid_by: paidBy,
       ...shopbackFields,
     };
@@ -417,19 +417,19 @@ export default function ExpenseScreen() {
 
         <View style={styles.switchRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.switchLabel}>Preflight</Text>
+            <Text style={styles.switchLabel}>Pretrip</Text>
             <Text style={styles.switchHint}>
               Bought in NZ before the trip. Counts toward the budget, not a trip day.
             </Text>
           </View>
           <Switch
-            value={isPreflight}
-            onValueChange={setPreflight}
+            value={isPretrip}
+            onValueChange={setPretrip}
             trackColor={{ true: colors.accent, false: colors.border }}
           />
         </View>
 
-        {!isPreflight ? (
+        {!isPretrip ? (
           <DateField
             label="Date"
             value={date}
@@ -444,7 +444,7 @@ export default function ExpenseScreen() {
           />
         ) : null}
 
-        {!isPreflight ? (
+        {!isPretrip ? (
           <CountryPicker
             label="Country"
             countries={countries}
@@ -484,7 +484,7 @@ export default function ExpenseScreen() {
               keyboardType="decimal-pad"
               hint={
                 shopbackMode === 'Flat'
-                  ? 'Flat amount ShopBack will credit for this purchase.'
+                  ? 'Flat amount that ShopBack will credit for this purchase.'
                   : 'Percentage of the spend returned as ShopBack.'
               }
             />

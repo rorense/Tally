@@ -378,7 +378,7 @@ export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Pr
   const id = newId();
   await db.runAsync(
     `INSERT INTO expenses (id, trip_id, leg_id, country_code, category, description, amount,
-      currency, rate_to_nzd, amount_nzd, spent_at, local_date, is_preflight, paid_by,
+      currency, rate_to_nzd, amount_nzd, spent_at, local_date, is_pretrip, paid_by,
       shopback_type, shopback_value, shopback_amount, shopback_amount_nzd, shopback_status,
       shopback_confirmed_at, updated_at, deleted_at, dirty)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)`,
@@ -394,7 +394,7 @@ export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Pr
     input.amount_nzd,
     input.spent_at,
     input.local_date,
-    input.is_preflight,
+    input.is_pretrip,
     input.paid_by,
     input.shopback_type,
     input.shopback_value,
@@ -412,7 +412,7 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
   await db.runAsync(
     `UPDATE expenses SET trip_id = ?, leg_id = ?, country_code = ?, category = ?, description = ?,
       amount = ?, currency = ?, rate_to_nzd = ?, amount_nzd = ?, spent_at = ?, local_date = ?,
-      is_preflight = ?, paid_by = ?, shopback_type = ?, shopback_value = ?, shopback_amount = ?,
+      is_pretrip = ?, paid_by = ?, shopback_type = ?, shopback_value = ?, shopback_amount = ?,
       shopback_amount_nzd = ?, shopback_status = ?, shopback_confirmed_at = ?,
       updated_at = ?, dirty = 1 WHERE id = ?`,
     input.trip_id,
@@ -426,7 +426,7 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
     input.amount_nzd,
     input.spent_at,
     input.local_date,
-    input.is_preflight,
+    input.is_pretrip,
     input.paid_by,
     input.shopback_type,
     input.shopback_value,
@@ -596,7 +596,7 @@ export async function spentByDay(
 ): Promise<{ local_date: string; total: number }[]> {
   return db.getAllAsync(
     `SELECT local_date, SUM(${NET_NZD}) AS total FROM expenses
-     WHERE trip_id = ? AND deleted_at IS NULL AND is_preflight = 0
+     WHERE trip_id = ? AND deleted_at IS NULL AND is_pretrip = 0
      GROUP BY local_date ORDER BY local_date`,
     tripId
   );
@@ -609,7 +609,7 @@ export async function spentOnDay(
 ): Promise<number> {
   const row = await db.getFirstAsync<{ total: number | null }>(
     `SELECT SUM(${NET_NZD}) AS total FROM expenses
-     WHERE trip_id = ? AND local_date = ? AND is_preflight = 0 AND deleted_at IS NULL`,
+     WHERE trip_id = ? AND local_date = ? AND is_pretrip = 0 AND deleted_at IS NULL`,
     tripId,
     date
   );

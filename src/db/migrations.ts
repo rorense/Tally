@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { COUNTRY_SEED } from './countries';
 
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 /**
  * Runs on every app launch via SQLiteProvider's `onInit`. Uses the
@@ -160,6 +160,14 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       `ALTER TABLE expenses ADD COLUMN is_preflight INTEGER NOT NULL DEFAULT 0`
     );
     version = 5;
+  }
+
+  if (version === 5) {
+    // Renamed for the product language: pre-trip bookings, not "preflight".
+    await db.execAsync(
+      `ALTER TABLE expenses RENAME COLUMN is_preflight TO is_pretrip`
+    );
+    version = 6;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

@@ -39,16 +39,16 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
   ]);
 
   // Oldest first reads better in a spreadsheet than the newest-first app list.
-  // Preflight rows sort before dated spend so the ledger matches the workbook.
+  // Pretrip rows sort before dated spend so the ledger matches the workbook.
   const ordered = [...expenses].sort((a, b) => {
-    if (a.is_preflight !== b.is_preflight) return b.is_preflight - a.is_preflight;
+    if (a.is_pretrip !== b.is_pretrip) return b.is_pretrip - a.is_pretrip;
     const byDate = a.local_date.localeCompare(b.local_date);
     if (byDate !== 0) return byDate;
     return a.spent_at.localeCompare(b.spent_at);
   });
 
   const dayKey = (e: (typeof ordered)[number]) =>
-    e.is_preflight === 1 || e.local_date < trip.start_date ? 'preflight' : e.local_date;
+    e.is_pretrip === 1 || e.local_date < trip.start_date ? 'pretrip' : e.local_date;
 
   const dayTotals = new Map<string, number>();
   for (const e of ordered) {
@@ -105,7 +105,7 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     previousKey = key;
 
     const dateLabel =
-      key === 'preflight' ? 'Preflight' : isFirstOfDay ? formatDayLabel(e.local_date) : '';
+      key === 'pretrip' ? 'Pretrip' : isFirstOfDay ? formatDayLabel(e.local_date) : '';
 
     ledgerRows.push([
       dateLabel,
@@ -169,7 +169,7 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
       { header: 'ShopBack Status', width: 12 },
       { header: 'Net NZD', width: 12, format: 'money' },
       { header: 'Day Total', width: 12, format: 'money' },
-      { header: 'Currency Conversion (1 unit equals to NZD)', width: 42 },
+      { header: 'Currency Conversion (1 unit equals NZD)', width: 42 },
       { header: '', width: 14, format: 'money' },
     ],
     rows: sheetRows,

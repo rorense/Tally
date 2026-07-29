@@ -58,12 +58,17 @@ export default function ExpensesScreen() {
   const sections = useMemo(() => {
     const groups = new Map<string, Expense[]>();
     for (const e of expenses) {
-      const list = groups.get(e.local_date) ?? [];
+      const key = e.is_preflight === 1 ? 'preflight' : e.local_date;
+      const list = groups.get(key) ?? [];
       list.push(e);
-      groups.set(e.local_date, list);
+      groups.set(key, list);
     }
     return Array.from(groups.entries())
-      .sort((a, b) => b[0].localeCompare(a[0]))
+      .sort((a, b) => {
+        if (a[0] === 'preflight') return -1;
+        if (b[0] === 'preflight') return 1;
+        return b[0].localeCompare(a[0]);
+      })
       .map(([date, data]) => ({
         title: date,
         total: data.reduce((sum, e) => sum + netExpenseNzd(e), 0),
@@ -125,7 +130,9 @@ export default function ExpensesScreen() {
         }
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionDate}>{formatLongDate(section.title)}</Text>
+            <Text style={styles.sectionDate}>
+              {section.title === 'preflight' ? 'Preflight' : formatLongDate(section.title)}
+            </Text>
             <Text style={styles.sectionTotal}>{formatNzd(section.total)}</Text>
           </View>
         )}

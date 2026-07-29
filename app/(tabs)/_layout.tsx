@@ -1,9 +1,7 @@
 import { Tabs } from 'expo-router';
 import { ColorValue, Text } from 'react-native';
-import {
-  SectionHeaderTitle,
-  TripSwitcherHeader,
-} from '../../src/components/TripSwitcherHeader';
+import { HeaderActions } from '../../src/components/AuthHeader';
+import { BrandHeaderTitle } from '../../src/components/BrandHeader';
 import { spacing } from '../../src/theme/theme';
 import { useTheme } from '../../src/theme/useTheme';
 
@@ -15,12 +13,12 @@ function TabIcon({ glyph, color }: { glyph: string; color: ColorValue }) {
   return <Text style={{ color, fontSize: 20 }}>{glyph}</Text>;
 }
 
-function sectionHeader(section: string) {
+function brandHeader(section?: string) {
   return {
-    title: section,
+    title: section ?? 'Tally',
     headerTitleAlign: 'left' as const,
-    headerTitle: () => <SectionHeaderTitle section={section} />,
-    headerRight: () => <TripSwitcherHeader />,
+    headerTitle: () => <BrandHeaderTitle section={section} />,
+    headerRight: () => <HeaderActions />,
   };
 }
 
@@ -33,6 +31,7 @@ export default function TabsLayout() {
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '700' },
         headerShadowVisible: false,
+        headerRight: () => <HeaderActions />,
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
@@ -46,35 +45,36 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Trip',
+          ...brandHeader(),
+          tabBarLabel: 'Trip',
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u25C6'} color={color} />,
         }}
       />
       <Tabs.Screen
         name="expenses"
         options={{
-          ...sectionHeader('Expenses'),
+          ...brandHeader('Expenses'),
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u2261'} color={color} />,
         }}
       />
       <Tabs.Screen
         name="charts"
         options={{
-          ...sectionHeader('Charts'),
+          ...brandHeader('Charts'),
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u25E7'} color={color} />,
         }}
       />
       <Tabs.Screen
         name="shopback"
         options={{
-          ...sectionHeader('ShopBack'),
+          ...brandHeader('ShopBack'),
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u21BA'} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          ...brandHeader('Settings'),
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u2699'} color={color} />,
         }}
       />

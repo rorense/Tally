@@ -7,12 +7,6 @@ import { Colors, radius, spacing, type } from '../theme/theme';
 import { useTheme, useThemedStyles } from '../theme/useTheme';
 import { TripIllustration } from './TripIllustration';
 
-/** Large page title for Expenses / ShopBack / Charts. */
-export function SectionHeaderTitle({ section }: { section: string }) {
-  const styles = useThemedStyles(createStyles);
-  return <Text style={styles.sectionTitle}>{section}</Text>;
-}
-
 /**
  * Compact trip picker for the header's right side. Opens a sheet so you can
  * switch trips without bouncing back to the Trip tab.
@@ -85,7 +79,6 @@ export function TripSwitcherHeader() {
 
 const createStyles = (c: Colors) =>
   StyleSheet.create({
-    sectionTitle: { ...type.title, color: c.text },
     headerHit: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -97,7 +90,6 @@ const createStyles = (c: Colors) =>
       backgroundColor: c.surfaceRaised,
       borderWidth: 1,
       borderColor: c.border,
-      marginRight: spacing.sm,
     },
     tripName: { ...type.caption, color: c.textMuted, fontWeight: '600', flexShrink: 1 },
     chevron: { color: c.textFaint, fontSize: 11, marginTop: 1 },

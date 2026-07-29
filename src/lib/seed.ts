@@ -76,6 +76,7 @@ export async function seedRehearsalTrip(db: SQLiteDatabase): Promise<string> {
       amount_nzd: convertToNzd(s.amount, placeholderRate),
       spent_at: new Date().toISOString(),
       local_date: date,
+      is_preflight: 0,
       paid_by: null,
       shopback_type: null,
       shopback_value: null,

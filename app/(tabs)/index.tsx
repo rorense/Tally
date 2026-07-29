@@ -10,6 +10,7 @@ import {
   listCategoryBudgets,
   listCountries,
   listExpenses,
+  shopbackSummary,
   spentByCategory,
   spentOnDay,
   totalSpentNzd,
@@ -31,6 +32,8 @@ interface Dash {
   recent: Expense[];
   currentCountry: string | null;
   currentCurrency: string | null;
+  shopbackConfirmed: number;
+  shopbackPending: number;
 }
 
 export default function DashboardScreen() {
@@ -45,15 +48,17 @@ export default function DashboardScreen() {
     if (!activeTrip) return setData(null);
     const today = todayLocal();
 
-    const [total, today_, byCategory, budgetRows, recent, leg, countries] = await Promise.all([
-      totalSpentNzd(db, activeTrip.id),
-      spentOnDay(db, activeTrip.id, today),
-      spentByCategory(db, activeTrip.id),
-      listCategoryBudgets(db, activeTrip.id),
-      listExpenses(db, activeTrip.id),
-      findLegForDate(db, activeTrip.id, today),
-      listCountries(db),
-    ]);
+    const [total, today_, byCategory, budgetRows, recent, leg, countries, shopback] =
+      await Promise.all([
+        totalSpentNzd(db, activeTrip.id),
+        spentOnDay(db, activeTrip.id, today),
+        spentByCategory(db, activeTrip.id),
+        listCategoryBudgets(db, activeTrip.id),
+        listExpenses(db, activeTrip.id),
+        findLegForDate(db, activeTrip.id, today),
+        listCountries(db),
+        shopbackSummary(db, activeTrip.id),
+      ]);
 
     const country = leg ? countries.find((c) => c.country_code === leg.country_code) : null;
 
@@ -65,6 +70,8 @@ export default function DashboardScreen() {
       recent: recent.slice(0, 6),
       currentCountry: country?.name ?? null,
       currentCurrency: leg?.currency_code ?? null,
+      shopbackConfirmed: shopback.confirmed_nzd,
+      shopbackPending: shopback.pending_nzd,
     });
   }, [db, activeTrip]);
 
@@ -79,15 +86,18 @@ export default function DashboardScreen() {
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         <EmptyState
           title="No trip yet"
-          subtitle="Create a trip, add the countries you are visiting, and start logging."
+          subtitle="Create a trip, or join one with a code from your travel partner."
         />
-        <Button title="Create a trip" onPress={() => router.push('/trip/edit')} />
+        <Button title="Create or join a trip" onPress={() => router.push('/trip/edit')} />
       </ScrollView>
     );
   }
 
   const budget = activeTrip.total_budget_nzd;
   const spent = data?.total ?? 0;
+  const shopbackConfirmed = data?.shopbackConfirmed ?? 0;
+  const shopbackPending = data?.shopbackPending ?? 0;
+  const spentBeforeShopback = spent + shopbackConfirmed;
   const remaining = budget - spent;
   const tripDays = daysBetween(activeTrip.start_date, activeTrip.end_date) + 1;
   const elapsed = Math.min(
@@ -160,8 +170,39 @@ export default function DashboardScreen() {
 
         <Text style={styles.bigTotal}>{formatNzd(spent)}</Text>
         <Text style={styles.bigTotalLabel}>
-          {budget > 0 ? `of ${formatNzd(budget)} budget` : 'spent so far'}
+          {shopbackConfirmed > 0 ? 'After ShopBack' : 'Spent so far'}
+          {budget > 0 ? ` \u00B7 of ${formatNzd(budget)}` : ''}
+          {' \u00B7 NZD'}
         </Text>
+
+        {shopbackConfirmed > 0 || shopbackPending > 0 ? (
+          <Pressable
+            style={styles.spendBreakdown}
+            onPress={() => router.push('/(tabs)/shopback')}
+            accessibilityRole="button"
+            accessibilityLabel="Open ShopBack">
+            <View style={styles.spendRow}>
+              <Text style={styles.spendRowLabel}>Before ShopBack</Text>
+              <Text style={styles.spendRowValue}>{formatNzd(spentBeforeShopback)}</Text>
+            </View>
+            {shopbackConfirmed > 0 ? (
+              <View style={styles.spendRow}>
+                <Text style={[styles.spendRowLabel, { color: colors.success }]}>
+                  Confirmed ShopBack
+                </Text>
+                <Text style={[styles.spendRowValue, { color: colors.success }]}>
+                  −{formatNzd(shopbackConfirmed)}
+                </Text>
+              </View>
+            ) : null}
+            {shopbackPending > 0 ? (
+              <View style={styles.spendRow}>
+                <Text style={styles.spendRowMuted}>Pending ShopBack</Text>
+                <Text style={styles.spendRowMuted}>{formatNzd(shopbackPending)}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
 
         {budget > 0 ? (
           <>
@@ -192,7 +233,7 @@ export default function DashboardScreen() {
         </View>
         <View style={styles.tile}>
           <Text style={styles.tileValue}>
-            {elapsed > 0 ? formatNzdCompact(spent / elapsed) : '$0'}
+            {elapsed > 0 ? formatNzdCompact(spent / elapsed) : formatNzdCompact(0)}
           </Text>
           <Text style={styles.tileLabel}>Daily average</Text>
         </View>
@@ -250,7 +291,7 @@ export default function DashboardScreen() {
                   {e.description || e.category}
                 </Text>
                 <Text style={styles.expenseMeta}>
-                  {`${formatShortDate(e.local_date)} \u00B7 ${e.country_code}`}
+                  {`${e.is_preflight === 1 ? 'Preflight' : formatShortDate(e.local_date)} \u00B7 ${e.country_code}`}
                 </Text>
               </View>
               <Text style={styles.expenseAmount}>{formatNzd(e.amount_nzd)}</Text>
@@ -338,6 +379,21 @@ const createStyles = (c: Colors) =>
     currentPlace: { ...type.caption, color: c.textMuted, marginBottom: spacing.md },
     bigTotal: { fontSize: 40, fontWeight: '800', color: c.text, letterSpacing: -1 },
     bigTotalLabel: { ...type.caption, color: c.textMuted, marginTop: 2 },
+    spendBreakdown: {
+      marginTop: spacing.lg,
+      paddingTop: spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+      gap: spacing.sm,
+    },
+    spendRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    spendRowLabel: { ...type.label, color: c.textMuted },
+    spendRowValue: { ...type.label, color: c.text, fontWeight: '600' },
+    spendRowMuted: { ...type.caption, color: c.textFaint },
     statRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.md },
     stat: { ...type.label, color: c.textMuted },
     tileRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },

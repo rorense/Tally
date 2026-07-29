@@ -1,8 +1,9 @@
 /** Currency symbols for the currencies this trip is likely to touch. */
 const SYMBOLS: Record<string, string> = {
-  NZD: '$',
-  AUD: '$',
-  USD: '$',
+  // NZ$ so home-currency totals are not mistaken for USD/AUD.
+  NZD: 'NZ$',
+  AUD: 'A$',
+  USD: 'US$',
   EUR: '\u20AC',
   GBP: '\u00A3',
   CHF: 'CHF ',
@@ -18,7 +19,7 @@ const SYMBOLS: Record<string, string> = {
   TRY: '\u20BA',
   ALL: 'L',
   RSD: 'din',
-  SGD: '$',
+  SGD: 'S$',
   AED: 'AED ',
 };
 
@@ -41,8 +42,10 @@ export function formatNzd(amount: number): string {
 
 /** Compact form for chart axes and tiles, where two decimals are just noise. */
 export function formatNzdCompact(amount: number): string {
-  if (Math.abs(amount) >= 1000) return `$${(amount / 1000).toFixed(1)}k`;
-  return `$${Math.round(amount)}`;
+  const sign = amount < 0 ? '-' : '';
+  const abs = Math.abs(amount);
+  if (abs >= 1000) return `${sign}NZ$${(abs / 1000).toFixed(1)}k`;
+  return `${sign}NZ$${Math.round(abs)}`;
 }
 
 /**

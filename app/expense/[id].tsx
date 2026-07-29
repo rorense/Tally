@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { CountryPicker } from '../../src/components/CountryPicker';
 import { DateField } from '../../src/components/DateField';
 import { Button, Card, ChipRow, Field, Screen } from '../../src/components/ui';
@@ -63,6 +63,7 @@ export default function ExpenseScreen() {
   const [members, setMembers] = useState<TripMember[]>([]);
 
   const [date, setDate] = useState(todayLocal());
+  const [isPreflight, setIsPreflight] = useState(false);
   const [countryCode, setCountryCode] = useState<string | null>(null);
   const [currency, setCurrency] = useState('EUR');
   const [legId, setLegId] = useState<string | null>(null);
@@ -75,6 +76,13 @@ export default function ExpenseScreen() {
   // Tracks the date we last applied an itinerary leg for, so changing the date
   // re-infers country, but opening a fresh form keeps the last-used country.
   const lastAppliedDate = useRef<string | null>(null);
+  // Remembers country/currency/leg when toggling Preflight on, so turning it
+  // off restores the trip-day defaults instead of leaving NZ stuck on.
+  const beforePreflight = useRef<{
+    countryCode: string | null;
+    currency: string;
+    legId: string | null;
+  } | null>(null);
 
   // Loads the expense being edited, or seeds a new one from the last entry /
   // today's leg so consecutive logging does not re-ask for country.
@@ -92,6 +100,7 @@ export default function ExpenseScreen() {
         if (cancelled || !e) return;
         setExisting(e);
         setDate(e.local_date);
+        setIsPreflight(e.is_preflight === 1);
         setCountryCode(e.country_code);
         setCurrency(e.currency);
         setLegId(e.leg_id);
@@ -150,11 +159,31 @@ export default function ExpenseScreen() {
   );
 
   useEffect(() => {
-    if (!loaded || !isNew) return;
+    if (!loaded || !isNew || isPreflight) return;
     if (lastAppliedDate.current === date) return;
     lastAppliedDate.current = date;
     applyLegForDate(date);
-  }, [loaded, isNew, date, applyLegForDate]);
+  }, [loaded, isNew, isPreflight, date, applyLegForDate]);
+
+  function setPreflight(next: boolean) {
+    if (next && !isPreflight) {
+      beforePreflight.current = { countryCode, currency, legId };
+      setCountryCode('NZ');
+      setCurrency('NZD');
+      setLegId(null);
+    } else if (!next && isPreflight) {
+      const prev = beforePreflight.current;
+      beforePreflight.current = null;
+      if (prev) {
+        setCountryCode(prev.countryCode);
+        setCurrency(prev.currency);
+        setLegId(prev.legId);
+      } else if (isValidDate(date)) {
+        applyLegForDate(date);
+      }
+    }
+    setIsPreflight(next);
+  }
 
   const rate = rateFor(currency);
 
@@ -208,8 +237,12 @@ export default function ExpenseScreen() {
     if (!description.trim()) {
       return Alert.alert('Description required', 'Say what the purchase was.');
     }
-    if (!countryCode) return Alert.alert('Country required', 'Pick where you spent it.');
-    if (!isValidDate(date)) return Alert.alert('Check the date', 'Use a real YYYY-MM-DD date.');
+    if (!isPreflight && !countryCode) {
+      return Alert.alert('Country required', 'Pick where you spent it.');
+    }
+    if (!isPreflight && !isValidDate(date)) {
+      return Alert.alert('Check the date', 'Use a real YYYY-MM-DD date.');
+    }
     if (effectiveRate === null) {
       return Alert.alert(
         'No rate yet',
@@ -274,19 +307,21 @@ export default function ExpenseScreen() {
 
     const payload = {
       trip_id: activeTrip.id,
-      leg_id: legId,
-      country_code: countryCode,
+      leg_id: isPreflight ? null : legId,
+      country_code: isPreflight ? 'NZ' : countryCode!,
       category,
       description: description.trim(),
       amount: parsedAmount,
-      currency,
+      currency: isPreflight ? currency || 'NZD' : currency,
       // Frozen at entry time so past totals never shift when rates move.
       rate_to_nzd: effectiveRate,
       amount_nzd: unchanged
         ? existing.amount_nzd
         : convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct),
       spent_at: existing?.spent_at ?? nowIso(),
-      local_date: date,
+      // Preflight keeps a date for the NOT NULL column; grouping uses is_preflight.
+      local_date: isValidDate(date) ? date : activeTrip.start_date,
+      is_preflight: isPreflight ? 1 : 0,
       paid_by: paidBy,
       ...shopbackFields,
     };
@@ -380,30 +415,48 @@ export default function ExpenseScreen() {
           placeholder="Dinner in Trastevere"
         />
 
-        <DateField
-          label="Date"
-          value={date}
-          onChange={setDate}
-          minimumDate={activeTrip.start_date}
-          maximumDate={activeTrip.end_date}
-          hint={
-            isNew
-              ? 'Defaults to your last country. Changing the date re-checks the itinerary.'
-              : undefined
-          }
-        />
+        <View style={styles.switchRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.switchLabel}>Preflight</Text>
+            <Text style={styles.switchHint}>
+              Bought in NZ before the trip. Counts toward the budget, not a trip day.
+            </Text>
+          </View>
+          <Switch
+            value={isPreflight}
+            onValueChange={setPreflight}
+            trackColor={{ true: colors.accent, false: colors.border }}
+          />
+        </View>
 
-        <CountryPicker
-          label="Country"
-          countries={countries}
-          value={countryCode}
-          onChange={(c) => {
-            setCountryCode(c.country_code);
-            setCurrency(c.currency_code);
-            // Manual override must not keep pointing at a leg for another country.
-            setLegId(null);
-          }}
-        />
+        {!isPreflight ? (
+          <DateField
+            label="Date"
+            value={date}
+            onChange={setDate}
+            minimumDate={activeTrip.start_date}
+            maximumDate={activeTrip.end_date}
+            hint={
+              isNew
+                ? 'Defaults to your last country. Changing the date re-checks the itinerary.'
+                : undefined
+            }
+          />
+        ) : null}
+
+        {!isPreflight ? (
+          <CountryPicker
+            label="Country"
+            countries={countries}
+            value={countryCode}
+            onChange={(c) => {
+              setCountryCode(c.country_code);
+              setCurrency(c.currency_code);
+              // Manual override must not keep pointing at a leg for another country.
+              setLegId(null);
+            }}
+          />
+        ) : null}
 
         <Text style={styles.sectionLabel}>Currency</Text>
         <ChipRow
@@ -514,6 +567,14 @@ const createStyles = (c: Colors) =>
       textTransform: 'uppercase',
       letterSpacing: 0.6,
     },
+    switchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.lg,
+      marginBottom: spacing.lg,
+    },
+    switchLabel: { ...type.body, color: c.text },
+    switchHint: { ...type.caption, color: c.textFaint, marginTop: 2 },
     payerRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
     payer: {
       paddingHorizontal: spacing.lg,

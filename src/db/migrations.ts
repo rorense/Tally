@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { COUNTRY_SEED } from './countries';
 
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 /**
  * Runs on every app launch via SQLiteProvider's `onInit`. Uses the
@@ -151,6 +151,15 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       WHERE shopback_amount IS NOT NULL
     `);
     version = 4;
+  }
+
+  if (version === 4) {
+    // Flights/hotels bought before the trip: still count toward budget, but are
+    // not pinned to a calendar day inside the trip window.
+    await db.execAsync(
+      `ALTER TABLE expenses ADD COLUMN is_preflight INTEGER NOT NULL DEFAULT 0`
+    );
+    version = 5;
   }
 
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

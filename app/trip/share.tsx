@@ -22,8 +22,7 @@ export default function ShareTripScreen() {
 
   if (!trip) return <Screen />;
 
-  const link = `tally://join/${trip.join_code}`;
-  const message = `Join my "${trip.name}" budget on Tally.\n\nCode: ${trip.join_code}\n\nOr tap: ${link}`;
+  const message = `Join my "${trip.name}" budget on Tally.\n\nCode: ${trip.join_code}`;
 
   return (
     <Screen>
@@ -51,14 +50,13 @@ export default function ShareTripScreen() {
           }}
         />
         <View style={{ height: spacing.md }} />
-        <Button title="Share link" onPress={() => Share.share({ message })} />
+        <Button title="Share code" onPress={() => Share.share({ message })} />
       </Card>
 
       <Card>
         <Text style={styles.note}>
-          The link only opens the app if it is already installed. Before the app is on the stores,
-          typing the code by hand is the reliable path, which is why the code avoids characters
-          that are easy to confuse.
+          The code avoids characters that are easy to confuse when typed by hand from a phone
+          screen.
         </Text>
       </Card>
     </Screen>

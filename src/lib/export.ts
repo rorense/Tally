@@ -39,18 +39,20 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
   ]);
 
   // Oldest first reads better in a spreadsheet than the newest-first app list.
+  // Preflight rows sort before dated spend so the ledger matches the workbook.
   const ordered = [...expenses].sort((a, b) => {
+    if (a.is_preflight !== b.is_preflight) return b.is_preflight - a.is_preflight;
     const byDate = a.local_date.localeCompare(b.local_date);
     if (byDate !== 0) return byDate;
     return a.spent_at.localeCompare(b.spent_at);
   });
 
-  const dayKey = (localDate: string) =>
-    localDate < trip.start_date ? 'pretrip' : localDate;
+  const dayKey = (e: (typeof ordered)[number]) =>
+    e.is_preflight === 1 || e.local_date < trip.start_date ? 'preflight' : e.local_date;
 
   const dayTotals = new Map<string, number>();
   for (const e of ordered) {
-    const key = dayKey(e.local_date);
+    const key = dayKey(e);
     dayTotals.set(key, (dayTotals.get(key) ?? 0) + netExpenseNzd(e));
   }
 
@@ -98,12 +100,12 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
   let previousKey: string | null = null;
 
   for (const e of ordered) {
-    const key = dayKey(e.local_date);
+    const key = dayKey(e);
     const isFirstOfDay = key !== previousKey;
     previousKey = key;
 
     const dateLabel =
-      key === 'pretrip' ? 'Pretrip' : isFirstOfDay ? formatDayLabel(e.local_date) : '';
+      key === 'preflight' ? 'Preflight' : isFirstOfDay ? formatDayLabel(e.local_date) : '';
 
     ledgerRows.push([
       dateLabel,

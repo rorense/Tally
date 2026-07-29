@@ -57,7 +57,7 @@ function Navigator() {
         <Stack.Screen name="trip/edit" options={{ title: 'Trip' }} />
         <Stack.Screen name="trip/join" options={{ title: 'Join a trip' }} />
         <Stack.Screen name="trip/share" options={{ title: 'Share' }} />
-        <Stack.Screen name="sign-in" options={{ title: 'Sign in', presentation: 'modal' }} />
+        <Stack.Screen name="sign-in" options={{ title: 'Account', presentation: 'modal' }} />
         <Stack.Screen name="join/[code]" options={{ headerShown: false }} />
       </Stack>
     </>

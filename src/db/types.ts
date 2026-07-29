@@ -80,8 +80,17 @@ export interface Expense extends SyncColumns {
    * The calendar date in the timezone the purchase happened in. Charts group by
    * this rather than `spent_at`, so an evening meal in Europe does not land on
    * the next day once converted to UTC or NZ time.
+   *
+   * Ignored for display/grouping when `is_preflight` is set (flights/hotels
+   * bought before the trip window).
    */
   local_date: string;
+  /**
+   * 1 when the purchase was made before travel (e.g. flights, accommodation).
+   * Preflight spend still counts toward the trip budget but is not attributed
+   * to a trip day.
+   */
+  is_preflight: number;
   paid_by: string | null;
   /** Null when the purchase has no ShopBack offer. */
   shopback_type: ShopbackType | null;

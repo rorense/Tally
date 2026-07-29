@@ -19,8 +19,8 @@ const finances: Sheet = {
     { header: '', width: 14, format: 'money' },
   ],
   rows: [
-    ['Pretrip', 'Transport', 'Auckland to Rome', 1890, 'NZD', 1890, 2243.93, 'EUR', 1.9663],
-    ['Pretrip', 'Accommodation', 'Rome hotel', 180, 'EUR', 353.93, '', 'NZD', 1],
+    ['Preflight', 'Transport', 'Auckland to Rome', 1890, 'NZD', 1890, 2243.93, 'EUR', 1.9663],
+    ['Preflight', 'Accommodation', 'Rome hotel', 180, 'EUR', 353.93, '', 'NZD', 1],
     ['14/01', 'Food', 'Dinner in Trastevere', 46.8, 'EUR', 92.02, 158.87, '', ''],
     ['', 'Activity', 'Colosseum & forum', 34, 'EUR', 66.85, '', 'Total', 2802.8],
     ['15/01', 'Transport', 'Train to Florence', 29.9, 'EUR', 58.79, 58.79, '', ''],

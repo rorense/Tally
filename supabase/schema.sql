@@ -73,6 +73,8 @@ create table if not exists public.expenses (
   -- The calendar day in the timezone the purchase happened in. Charts group by
   -- this, not spent_at, so an evening meal in Europe stays on the right day.
   local_date date not null,
+  -- 1 when bought before travel; still counts toward budget, not a trip day.
+  is_preflight integer not null default 0,
   paid_by uuid,
   shopback_type text,
   shopback_value numeric,

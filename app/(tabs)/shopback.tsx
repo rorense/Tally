@@ -216,7 +216,8 @@ export default function ShopbackScreen() {
                     {item.description || item.category}
                   </Text>
                   <Text style={styles.claimMeta}>
-                    {formatLongDate(item.local_date)} · {item.category} · {valueLabel}
+                    {item.is_preflight === 1 ? 'Preflight' : formatLongDate(item.local_date)} ·{' '}
+                    {item.category} · {valueLabel}
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>

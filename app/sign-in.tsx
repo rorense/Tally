@@ -1,20 +1,27 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Body, Button, Card, Caption, Field, H1, Screen } from '../src/components/ui';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { Body, Button, Card, Caption, ChipRow, Field, H1, Screen } from '../src/components/ui';
 import { useAuth } from '../src/hooks/useAuth';
 import { Colors, spacing, type } from '../src/theme/theme';
 import { useThemedStyles } from '../src/theme/useTheme';
 
+type Mode = 'in' | 'up';
+
 export default function SignInScreen() {
   const { signIn, signUp, configured } = useAuth();
   const styles = useThemedStyles(createStyles);
-  const [mode, setMode] = useState<'in' | 'up'>('in');
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const [mode, setMode] = useState<Mode>(params.mode === 'up' ? 'up' : 'in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (params.mode === 'up' || params.mode === 'in') setMode(params.mode);
+  }, [params.mode]);
 
   async function submit() {
     setError(null);
@@ -73,7 +80,19 @@ export default function SignInScreen() {
         working email access while travelling.
       </Caption>
 
-      <View style={{ height: spacing.xl }} />
+      <View style={{ height: spacing.lg }} />
+
+      <ChipRow
+        options={['Sign in', 'Create account'] as const}
+        value={mode === 'in' ? 'Sign in' : 'Create account'}
+        onChange={(v) => {
+          setError(null);
+          setNotice(null);
+          setMode(v === 'Create account' ? 'up' : 'in');
+        }}
+      />
+
+      <View style={{ height: spacing.lg }} />
 
       <Card>
         <Field
@@ -84,6 +103,7 @@ export default function SignInScreen() {
           autoCorrect={false}
           keyboardType="email-address"
           textContentType="emailAddress"
+          autoComplete="email"
           placeholder="you@example.com"
         />
         <Field
@@ -93,7 +113,8 @@ export default function SignInScreen() {
           secureTextEntry
           revealable
           autoCapitalize="none"
-          textContentType="password"
+          textContentType={mode === 'up' ? 'newPassword' : 'password'}
+          autoComplete={mode === 'up' ? 'new-password' : 'password'}
           placeholder="At least 6 characters"
         />
 
@@ -106,12 +127,6 @@ export default function SignInScreen() {
           loading={busy}
         />
       </Card>
-
-      <Pressable onPress={() => setMode((m) => (m === 'in' ? 'up' : 'in'))}>
-        <Text style={styles.toggle}>
-          {mode === 'in' ? 'Need an account? Create one' : 'Already have an account? Sign in'}
-        </Text>
-      </Pressable>
     </Screen>
   );
 }
@@ -120,5 +135,4 @@ const createStyles = (c: Colors) =>
   StyleSheet.create({
     error: { ...type.caption, color: c.danger, marginBottom: spacing.md },
     notice: { ...type.caption, color: c.success, marginBottom: spacing.md, lineHeight: 17 },
-    toggle: { ...type.label, color: c.accent, textAlign: 'center', padding: spacing.lg },
   });

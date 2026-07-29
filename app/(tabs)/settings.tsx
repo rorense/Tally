@@ -244,6 +244,12 @@ export default function SettingsScreen() {
             <Button title="Sign in" onPress={() => router.push('/sign-in')} />
             <View style={{ height: spacing.md }} />
             <Button
+              title="Create account"
+              variant="secondary"
+              onPress={() => router.push('/sign-in?mode=up')}
+            />
+            <View style={{ height: spacing.md }} />
+            <Button
               title="Join a trip with a code"
               variant="secondary"
               onPress={() => router.push('/trip/join')}

@@ -138,7 +138,7 @@ export default function ChartsScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Card>
         <Text style={styles.title}>Where the money went</Text>
-        <Text style={styles.subtitle}>{formatNzd(total)} total</Text>
+        <Text style={styles.subtitle}>{formatNzd(total)} total · NZD</Text>
         <View style={{ height: 240, marginTop: spacing.lg }}>
           <PolarChart data={pieData} labelKey="label" valueKey="value" colorKey="color">
             <Pie.Chart innerRadius="55%" />
@@ -161,8 +161,8 @@ export default function ChartsScreen() {
         <Text style={styles.title}>Daily spend</Text>
         <Text style={styles.subtitle}>
           {dailyData.length > 0
-            ? `${formatShortDate(dailyData[0].date)} to ${formatShortDate(dailyData[dailyData.length - 1].date)}`
-            : ''}
+            ? `${formatShortDate(dailyData[0].date)} to ${formatShortDate(dailyData[dailyData.length - 1].date)} · NZD`
+            : 'NZD'}
         </Text>
         <View style={{ height: 220, marginTop: spacing.lg }}>
           <CartesianChart

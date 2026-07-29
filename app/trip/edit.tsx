@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CountryPicker } from '../../src/components/CountryPicker';
 import { DateField } from '../../src/components/DateField';
-import { Body, Button, Card, Caption, Field, H2, Screen } from '../../src/components/ui';
+import { JoinTripForm } from '../../src/components/JoinTripForm';
+import { Body, Button, Card, Caption, ChipRow, Field, H2, Screen } from '../../src/components/ui';
 import {
   createTrip,
   deleteLeg,
@@ -31,6 +32,8 @@ import { useApp } from '../../src/hooks/useApp';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
+type NewTripMode = 'create' | 'join';
+
 export default function TripEditScreen() {
   const db = useSQLiteContext();
   const { refresh, setActiveTrip } = useApp();
@@ -40,6 +43,7 @@ export default function TripEditScreen() {
   const tripId = params.id ?? null;
   const isNew = !tripId;
 
+  const [newMode, setNewMode] = useState<NewTripMode>('create');
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(todayLocal());
   const [endDate, setEndDate] = useState(todayLocal());
@@ -182,6 +186,28 @@ export default function TripEditScreen() {
 
   return (
     <Screen>
+      {isNew ? (
+        <Card>
+          <ChipRow
+            options={['Create trip', 'Join with code'] as const}
+            value={newMode === 'join' ? 'Join with code' : 'Create trip'}
+            onChange={(v) => setNewMode(v === 'Join with code' ? 'join' : 'create')}
+          />
+        </Card>
+      ) : null}
+
+      {isNew && newMode === 'join' ? (
+        <Card>
+          <H2>Join a trip</H2>
+          <Caption>
+            Enter the code from the person who created the trip. You need to be online and signed
+            in for this one step.
+          </Caption>
+          <View style={{ height: spacing.lg }} />
+          <JoinTripForm />
+        </Card>
+      ) : (
+        <>
       <Card>
         <H2>{isNew ? 'New trip' : 'Trip details'}</H2>
         <Field
@@ -285,6 +311,8 @@ export default function TripEditScreen() {
           <Button title="Delete trip" variant="danger" onPress={handleDelete} />
         </>
       ) : null}
+        </>
+      )}
     </Screen>
   );
 }

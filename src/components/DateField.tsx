@@ -25,6 +25,7 @@ export function DateField({
   hint,
   minimumDate,
   maximumDate,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -32,6 +33,7 @@ export function DateField({
   hint?: string;
   minimumDate?: string;
   maximumDate?: string;
+  disabled?: boolean;
 }) {
   const [iosOpen, setIosOpen] = useState(false);
   const [iosDraft, setIosDraft] = useState(() =>
@@ -46,6 +48,7 @@ export function DateField({
   const max = maximumDate && isValidDate(maximumDate) ? parseLocalDate(maximumDate) : undefined;
 
   function openPicker() {
+    if (disabled) return;
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: selected,
@@ -68,13 +71,20 @@ export function DateField({
       <Text style={styles.label}>{label}</Text>
       <Pressable
         onPress={openPicker}
-        style={styles.trigger}
+        disabled={disabled}
+        style={[styles.trigger, disabled && styles.triggerDisabled]}
         accessibilityRole="button"
+        accessibilityState={{ disabled }}
         accessibilityLabel={`${label}, ${display}`}>
-        <Text style={[styles.triggerText, !isValidDate(value) && styles.placeholder]}>
+        <Text
+          style={[
+            styles.triggerText,
+            !isValidDate(value) && styles.placeholder,
+            disabled && styles.triggerTextDisabled,
+          ]}>
           {display}
         </Text>
-        <Text style={styles.chevron}>{'\u25BE'}</Text>
+        {!disabled ? <Text style={styles.chevron}>{'\u25BE'}</Text> : null}
       </Pressable>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
 
@@ -134,7 +144,9 @@ const createStyles = (c: Colors) =>
       alignItems: 'center',
       justifyContent: 'space-between',
     },
+    triggerDisabled: { opacity: 0.55 },
     triggerText: { color: c.text, fontSize: 16, flex: 1 },
+    triggerTextDisabled: { color: c.textFaint },
     placeholder: { color: c.textFaint },
     chevron: { color: c.textFaint, fontSize: 16, marginLeft: spacing.sm },
     hint: { ...type.caption, color: c.textFaint, marginTop: spacing.xs },

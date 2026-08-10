@@ -1,0 +1,48 @@
+name: Supabase keep-alive
+
+# Free-tier Supabase projects pause after ~7 days of inactivity, and un-pausing
+# is a manual click in the dashboard. Tally is used in bursts — once per trip,
+# months apart — so without this the first sync of every trip fails at the
+# airport. Any query that reaches Postgres resets the timer; server_now() is the
+# cheapest one the schema already has.
+
+on:
+  schedule:
+    # Twice a week against a 7-day budget, so a single dropped run is harmless.
+    # Off the hour because GitHub delays cron jobs most at :00. Times are UTC.
+    - cron: '17 6 * * 1,4'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call server_now()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "::error::Set the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets."
+            exit 1
+          fi
+
+          status=$(curl -sS --max-time 30 -o response.txt -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/server_now" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H 'Content-Type: application/json' \
+            -d '{}')
+
+          echo "HTTP $status"
+          cat response.txt
+          echo
+
+          # A paused project still answers at the edge, so only a 2xx proves
+          # Postgres itself woke up and served the query.
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Keep-alive failed with HTTP $status. The project may already be paused, or the anon grant on server_now() is missing."
+            exit 1
+          fi

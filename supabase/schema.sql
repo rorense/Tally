@@ -159,6 +159,12 @@ $$;
 
 grant execute on function public.server_now() to authenticated;
 
+-- Also granted to anon so the keep-alive cron can call it without an account.
+-- Free-tier projects pause after ~7 days idle, and Tally is used in bursts, so
+-- something has to touch Postgres between trips. This leaks nothing: the server
+-- clock is already in the Date header of every response.
+grant execute on function public.server_now() to anon;
+
 -- Creates or updates a trip as the signed-in user. Used by sync instead of a
 -- plain upsert: PostgREST upsert needs both INSERT and UPDATE RLS checks to
 -- pass, and UPDATE fails before the membership row exists. Membership is still
@@ -302,4 +308,5 @@ grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant execute on function public.join_trip_with_code(text, text) to authenticated;
 grant execute on function public.server_now() to authenticated;
+grant execute on function public.server_now() to anon;
 grant execute on function public.upsert_own_trip(jsonb, text) to authenticated;

@@ -37,6 +37,21 @@ Leaving both blank is fine: the app runs as a local-only ledger with no sign-in 
 2. In the SQL Editor, run [`supabase/schema.sql`](supabase/schema.sql) end to end.
 3. Under **Authentication → Sign In / Providers → Email**, turn **Confirm email** off (otherwise sign-up looks broken on travel wifi).
 
+### Keeping the project awake
+
+Free-tier projects pause after ~7 days of inactivity and need a manual restore. Tally goes months between trips, so [`.github/workflows/supabase-keepalive.yml`](.github/workflows/supabase-keepalive.yml) pings the database twice a week to reset that timer.
+
+Under **Settings → Secrets and variables → Actions**, add two repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `SUPABASE_URL` | `https://YOUR_PROJECT.supabase.co` (no trailing slash) |
+| `SUPABASE_ANON_KEY` | the same anon key as `.env` |
+
+Then run it once from the **Actions** tab to confirm it goes green. A red run means the project is already paused or the `anon` grant on `server_now()` is missing.
+
+One caveat: GitHub disables scheduled workflows after 60 days with no commits to the repo. It emails you first, and re-enabling is one click — but if Tally sits untouched for a couple of months, check the Actions tab before a trip.
+
 ## Develop
 
 ```bash

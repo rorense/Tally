@@ -41,12 +41,14 @@ Leaving both blank is fine: the app runs as a local-only ledger with no sign-in 
 
 Free-tier projects pause after ~7 days of inactivity and need a manual restore. Tally goes months between trips, so [`.github/workflows/supabase-keepalive.yml`](.github/workflows/supabase-keepalive.yml) pings the database twice a week to reset that timer.
 
-Under **Settings → Secrets and variables → Actions**, add two repository secrets:
+Under **Settings → Secrets and variables → Actions → Variables**, add two repository variables:
 
-| Secret | Value |
+| Variable | Value |
 | --- | --- |
 | `SUPABASE_URL` | `https://YOUR_PROJECT.supabase.co` (no trailing slash) |
 | `SUPABASE_ANON_KEY` | the same anon key as `.env` |
+
+Variables rather than secrets, and rather than environment secrets. The anon key is publishable — it ships inside every installed copy of the app, and RLS is what actually scopes access — so there is nothing to hide. Environment secrets would need the job to declare an `environment:`, and any approval rule on that environment would leave every scheduled run waiting on a human, which is the opposite of what a keep-alive wants.
 
 Then run it once from the **Actions** tab to confirm it goes green. A red run means the project is already paused or the `anon` grant on `server_now()` is missing.
 

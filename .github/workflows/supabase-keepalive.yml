@@ -18,14 +18,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Call server_now()
+        # Repository variables, not secrets. The anon key is publishable by
+        # design — it ships inside every installed copy of the app — and grants
+        # nothing on its own, since RLS is what scopes access. Keeping it a
+        # variable makes it readable in the settings UI, which is honest about
+        # what it is.
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
 
           if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
-            echo "::error::Set the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets."
+            echo "::error::Set the SUPABASE_URL and SUPABASE_ANON_KEY repository variables (Settings - Secrets and variables - Actions - Variables)."
             exit 1
           fi
 

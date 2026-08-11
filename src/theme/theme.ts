@@ -136,6 +136,16 @@ export const radius = {
   pill: 999,
 } as const;
 
+/**
+ * Durations in milliseconds. A sheet leaves faster than it arrives: an
+ * entrance is being read as it happens and wants room to settle, while a
+ * dismissal has already been decided and only needs to get out of the way.
+ */
+export const motion = {
+  sheetIn: 260,
+  sheetOut: 200,
+} as const;
+
 export const type = {
   display: { fontSize: 34, fontWeight: '700' as const, letterSpacing: -0.5 },
   title: { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.3 },

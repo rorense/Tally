@@ -2,17 +2,11 @@ import DateTimePicker, {
   DateTimePickerAndroid,
 } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
-import {
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { formatLongDate, isValidDate, parseLocalDate, toLocalDate, todayLocal } from '../lib/dates';
 import { Colors, radius, spacing, type } from '../theme/theme';
 import { useTheme, useThemedStyles } from '../theme/useTheme';
+import { BottomSheet } from './BottomSheet';
 
 /**
  * Calendar date field. Opens the native date picker; still stores
@@ -89,36 +83,37 @@ export function DateField({
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
 
       {Platform.OS === 'ios' ? (
-        <Modal visible={iosOpen} transparent animationType="slide" onRequestClose={() => setIosOpen(false)}>
-          <Pressable style={styles.backdrop} onPress={() => setIosOpen(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Pressable onPress={() => setIosOpen(false)} hitSlop={12}>
-                <Text style={styles.sheetAction}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  onChange(toLocalDate(iosDraft));
-                  setIosOpen(false);
-                }}
-                hitSlop={12}>
-                <Text style={[styles.sheetAction, styles.sheetDone]}>Done</Text>
-              </Pressable>
-            </View>
-            <DateTimePicker
-              value={iosDraft}
-              mode="date"
-              display="spinner"
-              themeVariant={scheme}
-              textColor={colors.text}
-              minimumDate={min}
-              maximumDate={max}
-              onValueChange={(_event, date) => {
-                if (date) setIosDraft(date);
+        <BottomSheet
+          visible={iosOpen}
+          onClose={() => setIosOpen(false)}
+          closeLabel={`Close the ${label} picker`}
+          style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <Pressable onPress={() => setIosOpen(false)} hitSlop={12}>
+              <Text style={styles.sheetAction}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                onChange(toLocalDate(iosDraft));
+                setIosOpen(false);
               }}
-            />
+              hitSlop={12}>
+              <Text style={[styles.sheetAction, styles.sheetDone]}>Done</Text>
+            </Pressable>
           </View>
-        </Modal>
+          <DateTimePicker
+            value={iosDraft}
+            mode="date"
+            display="spinner"
+            themeVariant={scheme}
+            textColor={colors.text}
+            minimumDate={min}
+            maximumDate={max}
+            onValueChange={(_event, date) => {
+              if (date) setIosDraft(date);
+            }}
+          />
+        </BottomSheet>
       ) : null}
     </View>
   );
@@ -150,13 +145,7 @@ const createStyles = (c: Colors) =>
     placeholder: { color: c.textFaint },
     chevron: { color: c.textFaint, fontSize: 16, marginLeft: spacing.sm },
     hint: { ...type.caption, color: c.textFaint, marginTop: spacing.xs },
-    backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-    sheet: {
-      backgroundColor: c.surface,
-      borderTopLeftRadius: radius.xl,
-      borderTopRightRadius: radius.xl,
-      paddingBottom: spacing.xxl,
-    },
+    sheet: { paddingBottom: spacing.xxl },
     sheetHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',

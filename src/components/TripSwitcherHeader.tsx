@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../hooks/useApp';
 import { formatShortDate } from '../lib/dates';
 import { Colors, radius, spacing, type } from '../theme/theme';
 import { useTheme, useThemedStyles } from '../theme/useTheme';
+import { BottomSheet } from './BottomSheet';
 import { TripIllustration } from './TripIllustration';
 
 /**
@@ -34,45 +35,44 @@ export function TripSwitcherHeader() {
         <Text style={styles.chevron}>{'\u25BE'}</Text>
       </Pressable>
 
-      <Modal
+      <BottomSheet
         visible={open}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Switch trip</Text>
-          <ScrollView
-            style={styles.list}
-            contentContainerStyle={{ paddingBottom: spacing.lg }}
-            keyboardShouldPersistTaps="handled">
-            {trips.map((t) => {
-              const active = t.id === activeTrip.id;
-              return (
-                <Pressable
-                  key={t.id}
-                  style={[styles.row, active && styles.rowActive]}
-                  onPress={async () => {
-                    if (!active) await setActiveTrip(t.id);
-                    setOpen(false);
-                  }}>
-                  <TripIllustration tripType={t.trip_type} active={active} size={40} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.rowName, active && { color: colors.accent }]} numberOfLines={1}>
-                      {t.name}
-                    </Text>
-                    <Text style={styles.rowMeta}>
-                      {formatShortDate(t.start_date)} to {formatShortDate(t.end_date)}
-                    </Text>
-                  </View>
-                  {active ? <Text style={styles.activeTag}>Active</Text> : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </Modal>
+        onClose={() => setOpen(false)}
+        closeLabel="Close the trip switcher"
+        style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+        <View style={styles.sheetHandle} />
+        <Text style={styles.sheetTitle}>Switch trip</Text>
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={{ paddingBottom: spacing.lg }}
+          keyboardShouldPersistTaps="handled">
+          {trips.map((t) => {
+            const active = t.id === activeTrip.id;
+            return (
+              <Pressable
+                key={t.id}
+                style={[styles.row, active && styles.rowActive]}
+                onPress={async () => {
+                  // Dismiss first. The switch reads SQLite, and awaiting it
+                  // here left the sheet sitting open for the round trip.
+                  setOpen(false);
+                  if (!active) await setActiveTrip(t.id);
+                }}>
+                <TripIllustration tripType={t.trip_type} active={active} size={40} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowName, active && { color: colors.accent }]} numberOfLines={1}>
+                    {t.name}
+                  </Text>
+                  <Text style={styles.rowMeta}>
+                    {formatShortDate(t.start_date)} to {formatShortDate(t.end_date)}
+                  </Text>
+                </View>
+                {active ? <Text style={styles.activeTag}>Active</Text> : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </BottomSheet>
     </>
   );
 }
@@ -93,14 +93,7 @@ const createStyles = (c: Colors) =>
     },
     tripName: { ...type.caption, color: c.textMuted, fontWeight: '600', flexShrink: 1 },
     chevron: { color: c.textFaint, fontSize: 11, marginTop: 1 },
-    backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
-    sheet: {
-      backgroundColor: c.surface,
-      borderTopLeftRadius: radius.xl,
-      borderTopRightRadius: radius.xl,
-      paddingHorizontal: spacing.lg,
-      maxHeight: '70%',
-    },
+    sheet: { paddingHorizontal: spacing.lg, maxHeight: '70%' },
     sheetHandle: {
       alignSelf: 'center',
       width: 36,

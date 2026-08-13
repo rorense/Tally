@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useApp } from '../hooks/useApp';
@@ -6,6 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useSync } from '../hooks/useSync';
 import { isCompleteJoinCode, normalizeJoinCode } from '../lib/joinCode';
 import { supabase } from '../lib/supabase';
+import { requestFullPull } from '../lib/sync';
 import { Colors, spacing, type } from '../theme/theme';
 import { useThemedStyles } from '../theme/useTheme';
 import { Button, Field } from './ui';
@@ -21,6 +23,7 @@ export function JoinTripForm({
   initialCode?: string;
   onJoined?: () => void;
 }) {
+  const db = useSQLiteContext();
   const { session } = useAuth();
   const { refresh, setActiveTrip, settings, updateSetting } = useApp();
   const { syncNow } = useSync();
@@ -63,6 +66,10 @@ export function JoinTripForm({
         );
         return;
       }
+
+      // Everything about this trip was written before the device joined it, so
+      // an incremental pull would skip the lot. Ask for the full set once.
+      await requestFullPull(db);
 
       // Pull the trip and its expenses down before showing it.
       await syncNow('manual');

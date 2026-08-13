@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { getSyncState, setSyncState, upsertMember } from '../db/repository';
 import { supabase } from './supabase';
-import { normaliseForPostgres, normaliseForSqlite } from './syncCodec';
+import { isNewerThan, normaliseForPostgres, normaliseForSqlite } from './syncCodec';
 
 /**
  * Tables synced to Supabase, in dependency order. Parents push before children
@@ -17,7 +17,25 @@ const SYNCED_TABLES = [
 
 type SyncedTable = (typeof SYNCED_TABLES)[number];
 
+/**
+ * Tables whose rows carry an identity beyond the primary key.
+ *
+ * A membership is the one row both sides can create on their own: joining runs
+ * `join_trip_with_code`, which mints an id in Postgres, while
+ * `ensureSelfMembership` mints a different one on the device. Two ids, one
+ * person, and `unique (trip_id, user_id)` on both stores rejects the second
+ * copy — the push fails on the server constraint and the pull fails on the
+ * local index, wedging sync in both directions.
+ *
+ * Pushing and pulling on this key instead of `id` lets the two copies collapse
+ * into one wherever they meet.
+ */
+const NATURAL_KEYS: Partial<Record<SyncedTable, readonly string[]>> = {
+  trip_members: ['trip_id', 'user_id'],
+};
+
 const LAST_PULLED_KEY = 'last_pulled_at';
+const FULL_PULL_KEY = 'full_pull_pending';
 
 export interface SyncResult {
   ok: boolean;
@@ -64,7 +82,8 @@ async function pushTable(
   }
 
   const payload = dirtyRows.map(normaliseForPostgres);
-  const { error } = await supabase.from(table).upsert(payload, { onConflict: 'id' });
+  const onConflict = (NATURAL_KEYS[table] ?? ['id']).join(',');
+  const { error } = await supabase.from(table).upsert(payload, { onConflict });
   if (error) throw new Error(`push ${table}: ${error.message}`);
 
   // Only clear dirty when the row is still the version we just pushed. An edit
@@ -104,10 +123,30 @@ async function pullTable(
   if (!data || data.length === 0) return 0;
 
   const localColumns = await columnsOf(db, table);
+  const naturalKey = NATURAL_KEYS[table];
 
   await db.withTransactionAsync(async () => {
     for (const remote of data) {
       const row = normaliseForSqlite(remote as Record<string, unknown>);
+
+      if (naturalKey) {
+        // The same row under a different id. `ON CONFLICT(id)` cannot see that
+        // collision, so the unique index would abort the entire pull. Settle it
+        // the way every other conflict here is settled — newest write wins. A
+        // newer local row keeps its id and hands it to the server on the next
+        // push, which upserts on this same key.
+        const dup = await db.getFirstAsync<{ id: string; updated_at: string }>(
+          `SELECT id, updated_at FROM ${table}
+           WHERE ${naturalKey.map((c) => `${c} = ?`).join(' AND ')} AND id <> ?`,
+          ...naturalKey.map((c) => row[c] as string),
+          row.id as string
+        );
+        if (dup) {
+          if (!isNewerThan(row.updated_at as string, dup.updated_at)) continue;
+          await db.runAsync(`DELETE FROM ${table} WHERE id = ?`, dup.id);
+        }
+      }
+
       const cols = localColumns.filter((c) => c !== 'dirty' && c in row);
       const values = cols.map((c) => row[c] as string | number | null);
 
@@ -188,11 +227,21 @@ export async function runSync(db: SQLiteDatabase, displayName = ''): Promise<Syn
   try {
     await ensureSelfMembership(db, session.user.id, displayName);
 
+    // One rejected row must not cost the user everything else. Record the
+    // failure and keep going: the pull below is what fills in a trip they have
+    // just joined, and skipping it leaves them staring at an empty budget with
+    // no way to recover. A failed push keeps its dirty flag and retries.
+    const pushErrors: string[] = [];
     for (const table of SYNCED_TABLES) {
-      pushed += await pushTable(db, table, displayName);
+      try {
+        pushed += await pushTable(db, table, displayName);
+      } catch (e) {
+        pushErrors.push(e instanceof Error ? e.message : `push ${table} failed`);
+      }
     }
 
-    const since = await getSyncState(db, LAST_PULLED_KEY);
+    const fullPull = (await getSyncState(db, FULL_PULL_KEY)) === '1';
+    const since = fullPull ? null : await getSyncState(db, LAST_PULLED_KEY);
     // Prefer the database clock so a phone set to the wrong timezone or with a
     // skewed clock cannot park the watermark in the future and permanently
     // skip partner writes. Fall back to the device clock if the RPC is absent
@@ -203,8 +252,12 @@ export async function runSync(db: SQLiteDatabase, displayName = ''): Promise<Syn
       pulled += await pullTable(db, table, since);
     }
 
+    // The watermark only moves once every pull has landed, so a failed pull is
+    // retried rather than skipped. A failed push does not hold it back: those
+    // rows are tracked by their dirty flag, not by the clock.
     await setSyncState(db, LAST_PULLED_KEY, startedAt);
-    return { ok: true, pushed, pulled };
+    if (fullPull) await setSyncState(db, FULL_PULL_KEY, '');
+    return { ok: pushErrors.length === 0, pushed, pulled, error: pushErrors[0] };
   } catch (e) {
     return {
       ok: false,
@@ -227,5 +280,24 @@ export async function countPendingChanges(db: SQLiteDatabase): Promise<number> {
 }
 
 export async function getLastPulledAt(db: SQLiteDatabase): Promise<string | null> {
-  return getSyncState(db, LAST_PULLED_KEY);
+  return (await getSyncState(db, LAST_PULLED_KEY)) || null;
+}
+
+/**
+ * Asks the next pass to ignore the watermark and fetch every row the account
+ * can see.
+ *
+ * Joining a trip is what needs this. The watermark means "this device holds
+ * everything written before now", which is only true of trips it was already a
+ * member of. Every row of a trip joined today was written before it, so an
+ * incremental pull skips the trip's legs, budgets and expenses for good and the
+ * new member is left looking at an empty budget.
+ *
+ * It is a stored flag rather than a cleared watermark because a pass already in
+ * flight is about to write a fresh watermark of its own, which would swallow
+ * the request. The flag survives that and is only cleared by a pull that
+ * actually ran without one.
+ */
+export async function requestFullPull(db: SQLiteDatabase): Promise<void> {
+  await setSyncState(db, FULL_PULL_KEY, '1');
 }

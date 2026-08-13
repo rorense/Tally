@@ -86,7 +86,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           console.warn('[sync]', result.error);
         }
         await refreshStatus();
-        if (result.ok && result.pulled > 0) refresh();
+        // A pass can now pull rows and still report a push failure. Show what
+        // arrived rather than holding it back behind the error.
+        if (result.pulled > 0) refresh();
         return result;
       } finally {
         inFlight.current = false;

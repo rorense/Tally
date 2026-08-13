@@ -28,6 +28,20 @@ export function normaliseForPostgres(row: Record<string, unknown>) {
   return out;
 }
 
+/**
+ * True when `a` happened after `b`.
+ *
+ * Postgres and SQLite spell the same instant differently — `...12.123456+00:00`
+ * against `...12.123Z` — so the two have to be compared as instants. Comparing
+ * the strings orders them by punctuation whenever they land in the same second.
+ */
+export function isNewerThan(a: string, b: string): boolean {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a > b;
+  return ta > tb;
+}
+
 export function normaliseForSqlite(row: Record<string, unknown>) {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(row)) {

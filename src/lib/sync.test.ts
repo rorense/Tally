@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isCompleteJoinCode, normalizeJoinCode } from './joinCode.ts';
 import { budgetPaceNzd } from './pace.ts';
-import { normaliseForPostgres, normaliseForSqlite, stripLocalColumns } from './syncCodec.ts';
+import {
+  isNewerThan,
+  normaliseForPostgres,
+  normaliseForSqlite,
+  stripLocalColumns,
+} from './syncCodec.ts';
 
 test('normalizeJoinCode inserts the hyphen and uppercases', () => {
   assert.equal(normalizeJoinCode('euro4k7p'), 'EURO-4K7P');
@@ -52,6 +57,16 @@ test('normaliseForPostgres nulls optional FKs but keeps empty NOT NULL text', ()
   assert.equal(out.display_name, '');
   assert.equal(out.description, '');
   assert.equal('dirty' in out, false);
+});
+
+test('isNewerThan compares instants, not the two stores spellings of them', () => {
+  const postgres = '2027-01-05T09:53:12.123456+00:00';
+  const sqlite = '2027-01-05T09:53:12.500Z';
+  // Same second, different formats: comparing as strings puts these backwards.
+  assert.equal(isNewerThan(sqlite, postgres), true);
+  assert.equal(isNewerThan(postgres, sqlite), false);
+  assert.equal(isNewerThan(postgres, postgres), false);
+  assert.equal(isNewerThan('2027-01-06T00:00:00Z', postgres), true);
 });
 
 test('normaliseForSqlite stores booleans as 0/1', () => {

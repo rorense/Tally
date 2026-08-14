@@ -10,7 +10,11 @@ import {
   View,
 } from 'react-native';
 import { ChipRow, EmptyState } from '../../src/components/ui';
-import { listCountries, listExpenses } from '../../src/db/repository';
+import {
+  listCountries,
+  listExpenses,
+  listUsedCountryCodes,
+} from '../../src/db/repository';
 import { CATEGORIES, type Category, type Country, type Expense } from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
 import { formatMoney, formatNzd } from '../../src/lib/money';
@@ -27,6 +31,9 @@ export default function ExpensesScreen() {
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
+  // Only offer country filters for places that actually have expenses — read
+  // from the whole trip, not from the currently filtered list.
+  const [usedCountries, setUsedCountries] = useState<string[]>([]);
   const [category, setCategory] = useState<Category | null>(null);
   const [countryCode, setCountryCode] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -34,6 +41,7 @@ export default function ExpensesScreen() {
   const load = useCallback(async () => {
     if (!activeTrip) return setExpenses([]);
     setCountries(await listCountries(db));
+    setUsedCountries(await listUsedCountryCodes(db, activeTrip.id));
     setExpenses(
       await listExpenses(db, activeTrip.id, {
         category,
@@ -48,12 +56,6 @@ export default function ExpensesScreen() {
       load();
     }, [load, revision])
   );
-
-  // Only offer country filters for places that actually have expenses.
-  const usedCountries = useMemo(() => {
-    const codes = Array.from(new Set(expenses.map((e) => e.country_code)));
-    return codes.sort();
-  }, [expenses]);
 
   const sections = useMemo(() => {
     const groups = new Map<string, Expense[]>();
@@ -102,7 +104,7 @@ export default function ExpensesScreen() {
           colorFor={(v) => (v === 'All' ? colors.accent : colors.category[v as Category])}
         />
 
-        {usedCountries.length > 1 ? (
+        {usedCountries.length > 1 || countryCode ? (
           <View style={{ marginTop: spacing.sm }}>
             <ChipRow
               options={['All', ...usedCountries]}
@@ -159,7 +161,11 @@ export default function ExpensesScreen() {
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.nzd}>{formatNzd(item.amount_nzd)}</Text>
+                {/* Net of confirmed ShopBack, matching the day subtotal above
+                    it and the trip total on the dashboard. Showing the gross
+                    figure here left a column of rows that visibly overshot
+                    their own heading. */}
+                <Text style={styles.nzd}>{formatNzd(netExpenseNzd(item))}</Text>
                 {item.currency !== 'NZD' ? (
                   <Text style={styles.original}>
                     {formatMoney(item.amount, item.currency)}

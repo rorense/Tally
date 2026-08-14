@@ -19,6 +19,7 @@ import { CATEGORIES, type Category, type Expense } from '../../src/db/types';
 import { daysBetween, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact } from '../../src/lib/money';
 import { budgetPaceNzd } from '../../src/lib/pace';
+import { netExpenseNzd } from '../../src/lib/shopback';
 import { useApp } from '../../src/hooks/useApp';
 import { useSync } from '../../src/hooks/useSync';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
@@ -294,7 +295,9 @@ export default function DashboardScreen() {
                   {`${e.is_pretrip === 1 ? 'Pretrip' : formatShortDate(e.local_date)} \u00B7 ${e.country_code}`}
                 </Text>
               </View>
-              <Text style={styles.expenseAmount}>{formatNzd(e.amount_nzd)}</Text>
+              {/* Net of confirmed ShopBack, so a row reads the same here as it
+                  does in the list and in the trip total above it. */}
+              <Text style={styles.expenseAmount}>{formatNzd(netExpenseNzd(e))}</Text>
             </Pressable>
           ))
         ) : (

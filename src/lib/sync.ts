@@ -1,7 +1,13 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { getSyncState, setSyncState, upsertMember } from '../db/repository';
+import { SETTING_KEYS } from './settings';
 import { supabase } from './supabase';
-import { isNewerThan, normaliseForPostgres, normaliseForSqlite } from './syncCodec';
+import {
+  canonicalInstant,
+  isNewerThan,
+  normaliseForPostgres,
+  normaliseForSqlite,
+} from './syncCodec';
 
 /**
  * Tables synced to Supabase, in dependency order. Parents push before children
@@ -36,6 +42,18 @@ const NATURAL_KEYS: Partial<Record<SyncedTable, readonly string[]>> = {
 
 const LAST_PULLED_KEY = 'last_pulled_at';
 const FULL_PULL_KEY = 'full_pull_pending';
+const LAST_USER_KEY = 'last_user_id';
+
+/**
+ * Rows per request when pulling.
+ *
+ * PostgREST caps every response at the project's `max-rows` setting (1000 by
+ * default), and it does so silently — a truncated page looks exactly like a
+ * complete one. Paging until a request comes back empty is what makes a trip
+ * with more expenses than the cap arrive in full instead of stopping at an
+ * arbitrary row and never being fetched again.
+ */
+const PULL_PAGE_SIZE = 500;
 
 export interface SyncResult {
   ok: boolean;
@@ -47,6 +65,54 @@ export interface SyncResult {
 async function columnsOf(db: SQLiteDatabase, table: string): Promise<string[]> {
   const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
   return rows.map((r) => r.name);
+}
+
+/**
+ * Identity of a row for matching a pushed copy against what the server
+ * returned. JSON rather than a joined string so no separator can appear inside
+ * a value and make two different keys collide.
+ */
+function matchKey(row: Record<string, unknown>, naturalKey?: readonly string[]): string {
+  return JSON.stringify((naturalKey ?? ['id']).map((c) => String(row[c] ?? '')));
+}
+
+/**
+ * Marks a pushed row as clean and adopts whatever the server decided about it.
+ *
+ * `updated_at` is stamped by a database trigger rather than taken from the
+ * phone, so the value that actually landed comes back in the response and is
+ * written here. Without that, local and remote hold different timestamps for
+ * the same write and the next pull compares them as a conflict.
+ *
+ * The `WHERE` clause is what keeps an edit made during the network round trip:
+ * it bumped `updated_at`, so this no longer matches, the row stays dirty, and
+ * the next pass sends it.
+ */
+async function stampPushedRow(
+  db: SQLiteDatabase,
+  table: SyncedTable,
+  row: Record<string, unknown>,
+  serverUpdatedAt: string | null,
+  extraColumns: Record<string, string> = {}
+): Promise<void> {
+  const sets = ['dirty = 0'];
+  const params: (string | number)[] = [];
+
+  if (serverUpdatedAt) {
+    sets.push('updated_at = ?');
+    params.push(canonicalInstant(serverUpdatedAt));
+  }
+  for (const [column, value] of Object.entries(extraColumns)) {
+    sets.push(`${column} = ?`);
+    params.push(value);
+  }
+
+  await db.runAsync(
+    `UPDATE ${table} SET ${sets.join(', ')} WHERE id = ? AND updated_at = ?`,
+    ...params,
+    row.id as string,
+    row.updated_at as string
+  );
 }
 
 /** Pushes every locally-changed row, then clears the dirty flag on success. */
@@ -67,67 +133,70 @@ async function pushTable(
     // before membership exists, so trips go through a security-definer RPC.
     for (const row of dirtyRows) {
       const payload = normaliseForPostgres(row);
-      const { error } = await supabase.rpc('upsert_own_trip', {
+      const { data, error } = await supabase.rpc('upsert_own_trip', {
         p_trip: payload,
         p_display_name: displayName,
       });
       if (error) throw new Error(`push trips: ${error.message}`);
-      await db.runAsync(
-        `UPDATE trips SET dirty = 0 WHERE id = ? AND updated_at = ?`,
-        row.id as string,
-        row.updated_at as string
-      );
+
+      // Both of these belong to the server. `join_code` comes back rewritten in
+      // the one case this device cannot detect on its own: the code it generated
+      // was already taken by somebody else's trip.
+      const stamped = (data ?? {}) as { updated_at?: string; join_code?: string };
+      const extra: Record<string, string> = {};
+      if (stamped.join_code && stamped.join_code !== row.join_code) {
+        extra.join_code = stamped.join_code;
+      }
+      await stampPushedRow(db, table, row, stamped.updated_at ?? null, extra);
     }
     return dirtyRows.length;
   }
 
   const payload = dirtyRows.map(normaliseForPostgres);
-  const onConflict = (NATURAL_KEYS[table] ?? ['id']).join(',');
-  const { error } = await supabase.from(table).upsert(payload, { onConflict });
+  const naturalKey = NATURAL_KEYS[table];
+  const onConflict = (naturalKey ?? ['id']).join(',');
+  const { data, error } = await supabase
+    .from(table)
+    .upsert(payload, { onConflict })
+    .select();
   if (error) throw new Error(`push ${table}: ${error.message}`);
 
-  // Only clear dirty when the row is still the version we just pushed. An edit
-  // during the network await bumps updated_at and must stay dirty so the next
-  // pass sends it.
+  // Matched on the natural key where there is one: the server may have resolved
+  // the upsert onto a row it minted under a different id.
+  const serverRows = new Map<string, Record<string, unknown>>();
+  for (const remote of data ?? []) {
+    serverRows.set(matchKey(remote as Record<string, unknown>, naturalKey), remote);
+  }
+
   for (const row of dirtyRows) {
-    await db.runAsync(
-      `UPDATE ${table} SET dirty = 0 WHERE id = ? AND updated_at = ?`,
-      row.id as string,
-      row.updated_at as string
-    );
+    const remote = serverRows.get(matchKey(row, naturalKey));
+    const serverUpdatedAt =
+      typeof remote?.updated_at === 'string' ? remote.updated_at : null;
+    await stampPushedRow(db, table, row, serverUpdatedAt);
   }
 
   return dirtyRows.length;
 }
 
 /**
- * Pulls rows changed since the last successful sync.
+ * Writes one page of remote rows into SQLite.
  *
- * Conflicts resolve last-write-wins on `updated_at`. The WHERE clause on the
- * local upsert is what enforces it: a remote row only overwrites the local one
- * if it is genuinely newer, so an unsynced local edit is never clobbered by a
- * stale server copy.
+ * Conflicts resolve last-write-wins on `updated_at`, with one exception the
+ * WHERE clause spells out: a row still marked dirty holds an edit the server
+ * has not seen, so it is never overwritten. It wins until the next push carries
+ * it up, which is the whole promise of an offline-first store.
  */
-async function pullTable(
+async function applyRemoteRows(
   db: SQLiteDatabase,
   table: SyncedTable,
-  since: string | null
-): Promise<number> {
-  if (!supabase) return 0;
-
-  let query = supabase.from(table).select('*');
-  if (since) query = query.gt('updated_at', since);
-
-  const { data, error } = await query;
-  if (error) throw new Error(`pull ${table}: ${error.message}`);
-  if (!data || data.length === 0) return 0;
-
+  rows: Record<string, unknown>[]
+): Promise<void> {
   const localColumns = await columnsOf(db, table);
   const naturalKey = NATURAL_KEYS[table];
 
   await db.withTransactionAsync(async () => {
-    for (const remote of data) {
-      const row = normaliseForSqlite(remote as Record<string, unknown>);
+    for (const remote of rows) {
+      const row = normaliseForSqlite(remote);
 
       if (naturalKey) {
         // The same row under a different id. `ON CONFLICT(id)` cannot see that
@@ -161,51 +230,129 @@ async function pullTable(
           .map(() => '?')
           .join(', ')}, 0)
          ON CONFLICT(id) DO UPDATE SET ${updates}
-         WHERE excluded.updated_at > ${table}.updated_at`,
+         WHERE excluded.updated_at > ${table}.updated_at AND ${table}.dirty = 0`,
         values
       );
     }
   });
+}
 
-  return data.length;
+/** Whoever is signed in right now, read from the local session store. */
+async function currentUserId(): Promise<string | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id ?? null;
+}
+
+/** Pulls rows changed since the last successful sync, a page at a time. */
+async function pullTable(
+  db: SQLiteDatabase,
+  table: SyncedTable,
+  since: string | null,
+  userId: string
+): Promise<number> {
+  if (!supabase) return 0;
+
+  let pulled = 0;
+  let from = 0;
+
+  for (;;) {
+    let query = supabase
+      .from(table)
+      .select('*')
+      // A total order is what makes paging safe. Ordering on `updated_at` alone
+      // leaves rows sharing a timestamp free to swap places between requests,
+      // which drops some and repeats others; `id` breaks every remaining tie.
+      .order('updated_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + PULL_PAGE_SIZE - 1);
+    if (since) query = query.gt('updated_at', since);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`pull ${table}: ${error.message}`);
+    if (!data || data.length === 0) break;
+
+    // The session can end while a pass is in flight. Signing out erases this
+    // device, and a page that was already on the wire would otherwise put the
+    // rows straight back — quietly undoing the one thing the confirmation
+    // dialog promised. Checked before the write, not before the request, so it
+    // catches a response that outlived the account it was fetched for.
+    if ((await currentUserId()) !== userId) break;
+
+    await applyRemoteRows(db, table, data as Record<string, unknown>[]);
+    pulled += data.length;
+    // Advanced by what actually arrived rather than by the page size, so a
+    // project configured with a lower `max-rows` than we ask for still walks
+    // the whole table instead of stopping after the first short page.
+    from += data.length;
+  }
+
+  return pulled;
 }
 
 export type SyncTrigger = 'manual' | 'reconnect' | 'foreground' | 'startup';
 
 /**
- * Guarantees the signed-in user is a member of every trip created on this
+ * Guarantees the signed-in user is a member of every *unclaimed* trip on this
  * device.
  *
  * Trips can be created offline, before any account exists, so membership cannot
  * be written at creation time. Without this backfill the creator would push a
  * trip and then be locked out of it by their own RLS policy, which scopes
  * access through trip_members.
+ *
+ * "Unclaimed" is doing real work in that sentence. A trip that already has a
+ * member belongs to whoever that is, and the local database outlives a sign-out
+ * — so enrolling into every local trip meant the next account signed in on a
+ * borrowed phone was quietly granted permanent server-side access to the
+ * previous traveller's trips and expenses.
  */
 async function ensureSelfMembership(
   db: SQLiteDatabase,
   userId: string,
   displayName: string
 ): Promise<void> {
-  const orphans = await db.getAllAsync<{ id: string }>(
+  const unclaimed = await db.getAllAsync<{ id: string }>(
     `SELECT t.id FROM trips t
      WHERE t.deleted_at IS NULL
        AND NOT EXISTS (
          SELECT 1 FROM trip_members m
-         WHERE m.trip_id = t.id AND m.user_id = ? AND m.deleted_at IS NULL
-       )`,
-    userId
+         WHERE m.trip_id = t.id AND m.deleted_at IS NULL
+       )`
   );
 
-  for (const { id } of orphans) {
+  for (const { id } of unclaimed) {
     await upsertMember(db, { trip_id: id, user_id: userId, display_name: displayName });
   }
 }
 
-async function serverNow(): Promise<string> {
-  if (!supabase) return new Date().toISOString();
+/**
+ * Resets the watermark when a different account signs in on this device.
+ *
+ * The watermark means "this device already holds everything written before
+ * now", which is only ever true of one account's view of the server. Carrying
+ * it across a switch makes the new account's first pull skip every row written
+ * before it signed in — the same empty-budget failure `requestFullPull` exists
+ * to prevent, arrived at from the other direction.
+ */
+async function resetWatermarkOnAccountChange(
+  db: SQLiteDatabase,
+  userId: string
+): Promise<void> {
+  const previous = await getSyncState(db, LAST_USER_KEY);
+  if (previous === userId) return;
+
+  await setSyncState(db, LAST_PULLED_KEY, '');
+  await setSyncState(db, FULL_PULL_KEY, '1');
+  await setSyncState(db, LAST_USER_KEY, userId);
+}
+
+/** The database's own clock, or null when the RPC cannot be reached. */
+async function serverNow(): Promise<string | null> {
+  if (!supabase) return null;
   const { data, error } = await supabase.rpc('server_now');
-  if (!error && typeof data === 'string') return data;
-  return new Date().toISOString();
+  if (!error && typeof data === 'string') return canonicalInstant(data);
+  return null;
 }
 
 /**
@@ -225,39 +372,54 @@ export async function runSync(db: SQLiteDatabase, displayName = ''): Promise<Syn
   let pulled = 0;
 
   try {
+    await resetWatermarkOnAccountChange(db, session.user.id);
     await ensureSelfMembership(db, session.user.id, displayName);
 
     // One rejected row must not cost the user everything else. Record the
     // failure and keep going: the pull below is what fills in a trip they have
     // just joined, and skipping it leaves them staring at an empty budget with
     // no way to recover. A failed push keeps its dirty flag and retries.
-    const pushErrors: string[] = [];
+    const problems: string[] = [];
     for (const table of SYNCED_TABLES) {
       try {
         pushed += await pushTable(db, table, displayName);
       } catch (e) {
-        pushErrors.push(e instanceof Error ? e.message : `push ${table} failed`);
+        problems.push(e instanceof Error ? e.message : `push ${table} failed`);
       }
     }
 
     const fullPull = (await getSyncState(db, FULL_PULL_KEY)) === '1';
     const since = fullPull ? null : await getSyncState(db, LAST_PULLED_KEY);
-    // Prefer the database clock so a phone set to the wrong timezone or with a
-    // skewed clock cannot park the watermark in the future and permanently
-    // skip partner writes. Fall back to the device clock if the RPC is absent
-    // on an older project.
     const startedAt = await serverNow();
 
     for (const table of SYNCED_TABLES) {
-      pulled += await pullTable(db, table, since);
+      pulled += await pullTable(db, table, since || null, session.user.id);
+    }
+
+    // Signing out mid-pass clears the watermark along with everything else.
+    // Writing a fresh one here would tell the next account that this empty
+    // database had already seen every row up to now.
+    if ((await currentUserId()) !== session.user.id) {
+      return { ok: false, pushed, pulled, error: 'Signed out during sync' };
     }
 
     // The watermark only moves once every pull has landed, so a failed pull is
     // retried rather than skipped. A failed push does not hold it back: those
     // rows are tracked by their dirty flag, not by the clock.
-    await setSyncState(db, LAST_PULLED_KEY, startedAt);
-    if (fullPull) await setSyncState(db, FULL_PULL_KEY, '');
-    return { ok: pushErrors.length === 0, pushed, pulled, error: pushErrors[0] };
+    //
+    // It has to be the database's clock. The device's would let a phone running
+    // fast park the watermark in the future and skip every partner write from
+    // then on, so a pass that could not read the server clock leaves it where
+    // it was: the next pass re-pulls this window, which costs bandwidth and
+    // loses nothing.
+    if (startedAt) {
+      await setSyncState(db, LAST_PULLED_KEY, startedAt);
+      if (fullPull) await setSyncState(db, FULL_PULL_KEY, '');
+    } else {
+      problems.push('Could not read the server clock, so the next sync will re-check everything.');
+    }
+
+    return { ok: problems.length === 0, pushed, pulled, error: problems[0] };
   } catch (e) {
     return {
       ok: false,
@@ -266,6 +428,42 @@ export async function runSync(db: SQLiteDatabase, displayName = ''): Promise<Syn
       error: e instanceof Error ? e.message : 'Sync failed',
     };
   }
+}
+
+/**
+ * Removes everything belonging to the account, leaving the device's own
+ * preferences alone. Runs on sign-out.
+ *
+ * The local database outlives a session, so without this a phone handed to
+ * someone else still shows the previous traveller's trips and expenses to
+ * whoever signs in next. They can no longer sync them — membership settles
+ * that — but they can still read them, which is not what signing out looks
+ * like it does.
+ *
+ * The FX cache and the country list stay: neither is personal, and refetching
+ * rates needs a connection the next traveller may not have. Appearance and the
+ * wifi-only preference stay for the same reason — they describe the phone, not
+ * the person. `sync_state` goes, so signing the same account back in starts
+ * from a clean watermark and pulls the trips down again rather than trusting a
+ * record of what a now-empty database had already seen.
+ *
+ * Anything still dirty is genuinely gone. The caller is expected to have said
+ * so before getting here.
+ */
+export async function clearAccountData(db: SQLiteDatabase): Promise<void> {
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    // Children first. Nothing here declares a foreign key, but the order costs
+    // nothing and keeps the intent legible.
+    for (const table of [...SYNCED_TABLES].reverse()) {
+      await txn.runAsync(`DELETE FROM ${table}`);
+    }
+    await txn.runAsync('DELETE FROM sync_state');
+    await txn.runAsync(
+      'DELETE FROM settings WHERE key IN (?, ?)',
+      SETTING_KEYS.activeTripId,
+      SETTING_KEYS.displayName
+    );
+  });
 }
 
 export async function countPendingChanges(db: SQLiteDatabase): Promise<number> {

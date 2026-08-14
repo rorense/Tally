@@ -90,6 +90,47 @@ export default function SettingsScreen() {
     }
   }
 
+  /**
+   * Signing out clears this phone, so the dialog has to say what that costs.
+   *
+   * Synced work comes back on the next sign-in; anything still waiting does
+   * not, and the remedy is the Sync now button directly above this one — so the
+   * count is spelled out rather than left as a generic "are you sure".
+   */
+  function confirmSignOut() {
+    const stakes =
+      pending > 0
+        ? pending === 1
+          ? 'One change has not synced yet and will be lost. Tap Sync now first to keep it.'
+          : `${pending} changes have not synced yet and will be lost. Tap Sync now first to keep them.`
+        : 'Everything here is synced, so signing back in brings it all down again.';
+
+    Alert.alert(
+      'Sign out',
+      `This erases the trips and expenses stored on this phone.\n\n${stakes}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+            } catch (e) {
+              Alert.alert(
+                'Could not sign out',
+                e instanceof Error ? e.message : 'Something went wrong. Try again.'
+              );
+            } finally {
+              // The wipe may have got part way, so re-read either way.
+              refresh();
+            }
+          },
+        },
+      ]
+    );
+  }
+
   function saveMarkup() {
     const parsed = parseAmount(markup) ?? 0;
     const clamped = Math.min(Math.max(parsed, 0), 15);
@@ -232,7 +273,7 @@ export default function SettingsScreen() {
               }}
             />
             <View style={{ height: spacing.md }} />
-            <Button title="Sign out" variant="secondary" onPress={signOut} />
+            <Button title="Sign out" variant="secondary" onPress={confirmSignOut} />
           </>
         ) : (
           <>

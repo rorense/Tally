@@ -9,6 +9,7 @@ import {
   parseLocalDate,
   toLocalDate,
 } from './dates.ts';
+import { csvEscape } from './csv.ts';
 import { convertToNzd, parseAmount, round2 } from './money.ts';
 
 test('toLocalDate reads the calendar day from local clock components', () => {
@@ -125,7 +126,34 @@ test('parseAmount handles European and US thousand separators', () => {
   assert.equal(parseAmount('-12,50'), -12.5);
 });
 
+test('parseAmount does not read a leading zero as a thousands group', () => {
+  // The three-trailing-digits rule turned these into whole units: 0.005 came
+  // back as 5, overstating the expense by a factor of a thousand.
+  assert.equal(parseAmount('0.005'), 0.005);
+  assert.equal(parseAmount('0.500'), 0.5);
+  assert.equal(parseAmount('0,750'), 0.75);
+  assert.equal(parseAmount('.500'), 0.5);
+  // The genuine thousands cases still read as thousands.
+  assert.equal(parseAmount('1.500'), 1500);
+  assert.equal(parseAmount('12,500'), 12500);
+});
+
 test('round2 avoids binary floating point drift', () => {
   assert.equal(round2(1.005), 1.01);
   assert.equal(round2(0.1 + 0.2), 0.3);
+});
+
+test('csvEscape neutralises text a spreadsheet would run as a formula', () => {
+  // A description is free text, and it is opened on someone else's machine.
+  assert.equal(csvEscape('=1+1'), "'=1+1");
+  assert.equal(csvEscape('@SUM(A1)'), "'@SUM(A1)");
+  assert.equal(csvEscape('+41 rail pass'), "'+41 rail pass");
+  assert.equal(csvEscape('-VAT refund'), "'-VAT refund");
+  // Quoting still applies on top of the guard.
+  assert.equal(csvEscape('=A1,"x"'), '"\'=A1,""x"""');
+  // Ordinary text is untouched, and numbers stay numeric so a negative amount
+  // is not exported as a string.
+  assert.equal(csvEscape('Dinner in Trastevere'), 'Dinner in Trastevere');
+  assert.equal(csvEscape(-12.5), '-12.5');
+  assert.equal(csvEscape(92.02), '92.02');
 });

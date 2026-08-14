@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { isCompleteJoinCode, normalizeJoinCode } from './joinCode.ts';
 import { budgetPaceNzd } from './pace.ts';
 import {
+  canonicalInstant,
   isNewerThan,
   normaliseForPostgres,
   normaliseForSqlite,
@@ -74,4 +75,46 @@ test('normaliseForSqlite stores booleans as 0/1', () => {
   assert.equal(out.flag, 1);
   assert.equal(out.other, 0);
   assert.equal(out.missing, null);
+});
+
+test('canonicalInstant gives Postgres and the device one spelling', () => {
+  assert.equal(canonicalInstant('2027-01-05T09:53:12.123456+00:00'), '2027-01-05T09:53:12.123Z');
+  assert.equal(canonicalInstant('2027-01-05T09:53:12.5+00:00'), '2027-01-05T09:53:12.500Z');
+  // Already canonical, and a non-UTC offset folded to UTC.
+  assert.equal(canonicalInstant('2027-01-05T09:53:12.123Z'), '2027-01-05T09:53:12.123Z');
+  assert.equal(canonicalInstant('2027-01-05T10:53:12.000+01:00'), '2027-01-05T09:53:12.000Z');
+  // Unparseable input is passed through rather than turned into Invalid Date.
+  assert.equal(canonicalInstant('not a date'), 'not a date');
+});
+
+test('canonical timestamps compare by time rather than by format', () => {
+  // The conflict check in pullTable is a SQL string comparison, so this is the
+  // property that makes it correct. Raw, these are one instant written two
+  // ways and the comparison still picks a winner: 'Z' sorts above '+', so the
+  // SQLite spelling always looks newer than the Postgres one.
+  const fromPostgres = '2027-01-05T09:53:12.500+00:00';
+  const fromSqlite = '2027-01-05T09:53:12.500Z';
+  assert.ok(fromSqlite > fromPostgres, 'raw spellings of one instant do not tie');
+  assert.equal(canonicalInstant(fromSqlite), canonicalInstant(fromPostgres));
+
+  // A genuinely later write still sorts later, whichever side wrote it.
+  const laterFromPostgres = '2027-01-05T09:53:13+00:00';
+  assert.ok(canonicalInstant(laterFromPostgres) > canonicalInstant(fromSqlite));
+});
+
+test('normaliseForSqlite canonicalises instants but leaves calendar dates alone', () => {
+  const out = normaliseForSqlite({
+    updated_at: '2027-01-05T09:53:12.123456+00:00',
+    spent_at: '2027-01-05T09:53:12.5+00:00',
+    shopback_confirmed_at: null,
+    // Date-only columns are the day the traveller was standing in. Running
+    // these through a Date would shift them across the dateline.
+    local_date: '2027-01-05',
+    start_date: '2027-01-01',
+  });
+  assert.equal(out.updated_at, '2027-01-05T09:53:12.123Z');
+  assert.equal(out.spent_at, '2027-01-05T09:53:12.500Z');
+  assert.equal(out.shopback_confirmed_at, null);
+  assert.equal(out.local_date, '2027-01-05');
+  assert.equal(out.start_date, '2027-01-01');
 });

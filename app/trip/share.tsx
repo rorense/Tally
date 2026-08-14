@@ -1,4 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
+import * as Linking from 'expo-linking';
 import { useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
@@ -22,7 +23,15 @@ export default function ShareTripScreen() {
 
   if (!trip) return <Screen />;
 
-  const message = `Join my "${trip.name}" budget on Tally.\n\nCode: ${trip.join_code}`;
+  // Sent alongside the code rather than instead of it. The link only opens for
+  // someone who already has Tally installed, and `createURL` resolves to the
+  // dev server's exp:// address under Expo Go, so the typed code stays the
+  // instruction that always works.
+  const joinLink = Linking.createURL(`/join/${trip.join_code}`);
+  const message =
+    `Join my "${trip.name}" budget on Tally.\n\n` +
+    `Code: ${trip.join_code}\n\n` +
+    `Already have the app? ${joinLink}`;
 
   return (
     <Screen>

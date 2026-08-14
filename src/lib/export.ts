@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { listCategoryBudgets, listExpenses } from '../db/repository';
 import { CATEGORIES, type Trip } from '../db/types';
+import { csvEscape } from './csv';
 import { round2 } from './money';
 import { netExpenseNzd } from './shopback';
 import { buildXlsx, type Sheet } from './xlsx';
@@ -11,11 +12,6 @@ export interface ExportData {
   /** Filename stem, without an extension. */
   baseName: string;
   rowCount: number;
-}
-
-function csvEscape(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /** `YYYY-MM-DD` → `DD/MM`, matching the hand-maintained trip workbook. */

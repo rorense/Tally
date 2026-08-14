@@ -1,4 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
+import { useSQLiteContext } from 'expo-sqlite';
 import {
   createContext,
   ReactNode,
@@ -9,6 +10,7 @@ import {
   useState,
 } from 'react';
 import { isSyncConfigured, supabase } from '../lib/supabase';
+import { clearAccountData } from '../lib/sync';
 
 interface AuthContextValue {
   session: Session | null;
@@ -32,6 +34,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  * after a week in poor signal. The session matters only when sync runs.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const db = useSQLiteContext();
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
@@ -62,9 +65,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null, needsEmailConfirmation: data.session === null };
   }, []);
 
+  /**
+   * Ends the session and takes the account's data off the device with it.
+   *
+   * The wipe lives here rather than at the button so there is no way to sign
+   * out without it, and it runs first on purpose: if the two steps cannot both
+   * complete, a signed-in session holding its own data is a better place to
+   * land than a signed-out phone still holding somebody else's.
+   *
+   * Callers are expected to have confirmed with the traveller — unsynced work
+   * does not survive this.
+   */
   const signOut = useCallback(async () => {
+    await clearAccountData(db);
     await supabase?.auth.signOut();
-  }, []);
+  }, [db]);
 
   const value = useMemo(
     () => ({

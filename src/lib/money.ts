@@ -64,6 +64,21 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * True when the digits before `index` could be the leading group of a
+ * thousands-separated number.
+ *
+ * `1.234` is one thousand two hundred and thirty-four, but `0.005` is five
+ * thousandths: no notation writes a leading thousands group as `0`, or as
+ * nothing at all. Without this check the three-trailing-digits rule read
+ * `0.005` as `0005` and returned 5 — a thousandfold overstatement, and only on
+ * the amounts small enough that nobody would think to check.
+ */
+function looksLikeThousandsGroup(cleaned: string, index: number): boolean {
+  const head = cleaned.slice(0, index).replace('-', '');
+  return head.length > 0 && !head.startsWith('0');
+}
+
 /** Tolerant of European number formats: `12,50`, `1.234,56`, and `1,234.56`. */
 export function parseAmount(input: string): number | null {
   let cleaned = input.replace(/[^0-9.,-]/g, '');
@@ -83,14 +98,17 @@ export function parseAmount(input: string): number | null {
     const commas = cleaned.split(',').length - 1;
     const after = cleaned.length - lastComma - 1;
     // Multiple commas, or a single comma with three trailing digits, are thousands.
-    cleaned =
-      commas > 1 || after === 3 ? cleaned.replace(/,/g, '') : cleaned.replace(',', '.');
+    const thousands =
+      commas > 1 || (after === 3 && looksLikeThousandsGroup(cleaned, lastComma));
+    cleaned = thousands ? cleaned.replace(/,/g, '') : cleaned.replace(',', '.');
   } else if (lastDot >= 0) {
     const dots = cleaned.split('.').length - 1;
     const after = cleaned.length - lastDot - 1;
     // `1.234.567` or `1.234` (exactly three fraction digits) read as thousands.
-    // `12.5` / `12.50` keep the decimal point.
-    if (dots > 1 || after === 3) cleaned = cleaned.replace(/\./g, '');
+    // `12.5` / `12.50` / `0.005` keep the decimal point.
+    if (dots > 1 || (after === 3 && looksLikeThousandsGroup(cleaned, lastDot))) {
+      cleaned = cleaned.replace(/\./g, '');
+    }
   }
 
   const n = Number(cleaned);

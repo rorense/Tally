@@ -71,45 +71,31 @@ npm run typecheck
 
 ## Build
 
-EAS profiles are in [`eas.json`](eas.json):
+**[`RELEASING.md`](RELEASING.md) is the runbook** — building, shipping over the air, adding a travel partner, and a pre-trip checklist for when this has sat untouched for a few months. Start there.
 
-| Profile | Use |
-| --- | --- |
-| `development` | Dev client |
-| `preview` | Internal APK / device build |
-| `trip` | Ad-hoc internal build for the actual trip (auto-increments) |
-| `trip-testflight` | iOS trip build over TestFlight, no device UDIDs (auto-increments) |
-| `production` | Store submission |
-
-`trip` is ad-hoc on iOS, which on an Individual team means the provisioning profile carries an explicit list of device UDIDs — every phone has to be registered with `eas device:create` *before* the build, because adding one afterwards needs a new binary. `trip-testflight` avoids that entirely: store distribution needs no UDIDs, and a travel partner installs through the TestFlight app. It keeps the `trip` channel deliberately, so one `eas update --branch trip` still reaches both it and the Android build.
-
-The CLI is published as `eas-cli`; `eas` is only the binary name inside it, so `npx eas` fails with "could not determine executable to run" unless the package is installed. Either install it once:
+The short version. Install the CLI (the package is `eas-cli`; plain `npx eas` fails):
 
 ```bash
 npm install -g eas-cli
 ```
 
-and then use `eas build …`, or name the package in full every time:
+Most changes need no build at all — `expo-updates` carries JavaScript to installed apps over the air:
 
 ```bash
-npx eas-cli@latest build --profile trip --platform android
+eas update --branch trip --message "what changed"
+```
+
+When a dependency or `app.json` did change, build. Profiles live in [`eas.json`](eas.json):
+
+```bash
+eas build --profile trip --platform android
 ```
 
 ```bash
-npx eas-cli@latest build --profile trip --platform ios
+eas build --profile trip-testflight --platform ios
 ```
 
-Expo Go is enough for day-to-day testing. Use a real `trip` build when you need the Tally icon, splash, and `tally://join/…` links.
-
-### Shipping without a rebuild
-
-`expo-updates` is enabled, so a change that touches no native config — no new packages, nothing in `app.json` — reaches phones already running a `trip` build over the air:
-
-```bash
-npx eas-cli@latest update --branch trip --message "what changed"
-```
-
-`runtimeVersion` follows `appVersion`, so an update only reaches builds whose `app.json` version matches. Bump the version and you need a new binary.
+Use `trip-testflight` rather than `trip` for iOS: `trip` is ad-hoc, which needs every device's UDID registered before the build. Expo Go is enough for day-to-day testing, but a real build is what gives you the Tally icon, splash, and `tally://join/…` links.
 
 ## How sync works
 

@@ -78,7 +78,10 @@ EAS profiles are in [`eas.json`](eas.json):
 | `development` | Dev client |
 | `preview` | Internal APK / device build |
 | `trip` | Ad-hoc internal build for the actual trip (auto-increments) |
+| `trip-testflight` | iOS trip build over TestFlight, no device UDIDs (auto-increments) |
 | `production` | Store submission |
+
+`trip` is ad-hoc on iOS, which on an Individual team means the provisioning profile carries an explicit list of device UDIDs — every phone has to be registered with `eas device:create` *before* the build, because adding one afterwards needs a new binary. `trip-testflight` avoids that entirely: store distribution needs no UDIDs, and a travel partner installs through the TestFlight app. It keeps the `trip` channel deliberately, so one `eas update --branch trip` still reaches both it and the Android build.
 
 The CLI is published as `eas-cli`; `eas` is only the binary name inside it, so `npx eas` fails with "could not determine executable to run" unless the package is installed. Either install it once:
 

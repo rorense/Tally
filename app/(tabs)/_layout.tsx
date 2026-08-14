@@ -1,9 +1,22 @@
 import { Tabs } from 'expo-router';
 import { ColorValue, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeaderActions } from '../../src/components/AuthHeader';
 import { BrandHeaderTitle } from '../../src/components/BrandHeader';
 import { spacing } from '../../src/theme/theme';
 import { useTheme } from '../../src/theme/useTheme';
+
+/**
+ * Room for a tab's glyph, its label, and the padding the tab itself carries.
+ *
+ * The bar is a fixed-height box, and the safe area below it is padding inside
+ * that box rather than extra height, so whatever the content does not fit into
+ * spills over the home indicator instead of pushing the bar taller. React
+ * Navigation's stock 49 only just covers a default tab; the glyph and label
+ * here are a little larger, and the breathing space above them costs more
+ * still, so the bar is measured for what it actually holds.
+ */
+const tabBarContentHeight = 56;
 
 /**
  * Text glyph icons rather than an icon font: keeps the bundle small and avoids
@@ -24,6 +37,7 @@ function brandHeader(section?: string) {
 
 export default function TabsLayout() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
     <Tabs
       screenOptions={{
@@ -36,6 +50,10 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           paddingTop: spacing.xs,
+          // Naming a height means naming the inset too: React Navigation reads
+          // a numeric height as the whole bar and stops adding its own safe
+          // area allowance on top.
+          height: tabBarContentHeight + insets.bottom,
         },
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textFaint,

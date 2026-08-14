@@ -3,6 +3,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatLongDate, isValidDate, parseLocalDate, toLocalDate, todayLocal } from '../lib/dates';
 import { Colors, radius, spacing, type } from '../theme/theme';
 import { useTheme, useThemedStyles } from '../theme/useTheme';
@@ -35,6 +36,7 @@ export function DateField({
   );
   const styles = useThemedStyles(createStyles);
   const { colors, scheme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const display = isValidDate(value) ? formatLongDate(value) : 'Pick a date';
   const selected = isValidDate(value) ? parseLocalDate(value) : parseLocalDate(todayLocal());
@@ -87,7 +89,7 @@ export function DateField({
           visible={iosOpen}
           onClose={() => setIosOpen(false)}
           closeLabel={`Close the ${label} picker`}
-          style={styles.sheet}>
+          style={{ paddingBottom: Math.max(insets.bottom, spacing.xxl) }}>
           <View style={styles.sheetHeader}>
             <Pressable onPress={() => setIosOpen(false)} hitSlop={12}>
               <Text style={styles.sheetAction}>Cancel</Text>
@@ -145,7 +147,6 @@ const createStyles = (c: Colors) =>
     placeholder: { color: c.textFaint },
     chevron: { color: c.textFaint, fontSize: 16, marginLeft: spacing.sm },
     hint: { ...type.caption, color: c.textFaint, marginTop: spacing.xs },
-    sheet: { paddingBottom: spacing.xxl },
     sheetHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',

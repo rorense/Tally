@@ -80,12 +80,33 @@ EAS profiles are in [`eas.json`](eas.json):
 | `trip` | Ad-hoc internal build for the actual trip (auto-increments) |
 | `production` | Store submission |
 
+The CLI is published as `eas-cli`; `eas` is only the binary name inside it, so `npx eas` fails with "could not determine executable to run" unless the package is installed. Either install it once:
+
 ```bash
-npx eas build --profile trip --platform android
-npx eas build --profile trip --platform ios
+npm install -g eas-cli
+```
+
+and then use `eas build …`, or name the package in full every time:
+
+```bash
+npx eas-cli@latest build --profile trip --platform android
+```
+
+```bash
+npx eas-cli@latest build --profile trip --platform ios
 ```
 
 Expo Go is enough for day-to-day testing. Use a real `trip` build when you need the Tally icon, splash, and `tally://join/…` links.
+
+### Shipping without a rebuild
+
+`expo-updates` is enabled, so a change that touches no native config — no new packages, nothing in `app.json` — reaches phones already running a `trip` build over the air:
+
+```bash
+npx eas-cli@latest update --branch trip --message "what changed"
+```
+
+`runtimeVersion` follows `appVersion`, so an update only reaches builds whose `app.json` version matches. Bump the version and you need a new binary.
 
 ## How sync works
 

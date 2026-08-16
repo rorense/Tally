@@ -26,18 +26,24 @@ type SyncedTable = (typeof SYNCED_TABLES)[number];
 /**
  * Tables whose rows carry an identity beyond the primary key.
  *
- * A membership is the one row both sides can create on their own: joining runs
- * `join_trip_with_code`, which mints an id in Postgres, while
- * `ensureSelfMembership` mints a different one on the device. Two ids, one
- * person, and `unique (trip_id, user_id)` on both stores rejects the second
- * copy — the push fails on the server constraint and the pull fails on the
- * local index, wedging sync in both directions.
+ * Anything both devices can create independently ends up here. A membership is
+ * one: joining runs `join_trip_with_code`, which mints an id in Postgres, while
+ * `ensureSelfMembership` mints a different one on the device. A category budget
+ * is the other: saving the trip editor writes a row for every category, so two
+ * travellers who each open that screen mint two ids for the same category of
+ * the same trip.
+ *
+ * Either way it is two ids for one row, and `unique (trip_id, ...)` on both
+ * stores rejects the second copy — the push fails on the server constraint and
+ * the pull fails on the local index, wedging sync in both directions with no
+ * way out, because the rejected rows stay dirty and are retried forever.
  *
  * Pushing and pulling on this key instead of `id` lets the two copies collapse
  * into one wherever they meet.
  */
 const NATURAL_KEYS: Partial<Record<SyncedTable, readonly string[]>> = {
   trip_members: ['trip_id', 'user_id'],
+  category_budgets: ['trip_id', 'category'],
 };
 
 const LAST_PULLED_KEY = 'last_pulled_at';
@@ -115,6 +121,49 @@ async function stampPushedRow(
   );
 }
 
+/**
+ * Sends a batch, and falls back to one request per row when the batch was
+ * rejected for something a single row did.
+ *
+ * PostgREST applies a batch as one statement, so one row Postgres will not take
+ * fails every other row in the request alongside it. All of them keep their
+ * dirty flag, the next pass assembles the same doomed batch, and that table
+ * stops moving for good — which is how one category budget holding a
+ * `(trip_id, category)` the server already had under another id stopped a
+ * trip's expenses syncing too.
+ *
+ * `23xxx` is Postgres' integrity-violation class: unique, foreign key, not
+ * null, check. Each is a property of one row, so resending individually isolates
+ * the offender and lets everything else land. Anything else — an expired token,
+ * RLS, a dropped connection — would fail identically row by row, so it is
+ * reported as it stands instead of being turned into one request per row.
+ */
+async function upsertRows(
+  table: SyncedTable,
+  payload: Record<string, unknown>[],
+  onConflict: string
+): Promise<{ landed: Record<string, unknown>[]; problem?: string }> {
+  if (!supabase) return { landed: [] };
+  const client = supabase;
+  const send = (rows: Record<string, unknown>[]) =>
+    client.from(table).upsert(rows, { onConflict }).select();
+
+  const { data, error } = await send(payload);
+  if (!error) return { landed: (data ?? []) as Record<string, unknown>[] };
+  if (payload.length === 1 || !error.code?.startsWith('23')) {
+    throw new Error(`push ${table}: ${error.message}`);
+  }
+
+  const landed: Record<string, unknown>[] = [];
+  let problem: string | undefined;
+  for (const row of payload) {
+    const single = await send([row]);
+    if (single.error) problem ??= `push ${table}: ${single.error.message}`;
+    else landed.push(...((single.data ?? []) as Record<string, unknown>[]));
+  }
+  return { landed, problem };
+}
+
 /** Pushes every locally-changed row, then clears the dirty flag on success. */
 async function pushTable(
   db: SQLiteDatabase,
@@ -131,13 +180,22 @@ async function pushTable(
   if (table === 'trips') {
     // Plain upsert needs INSERT+UPDATE RLS. A new trip fails the UPDATE check
     // before membership exists, so trips go through a security-definer RPC.
+    //
+    // One trip per request already, so a rejected one is recorded and the rest
+    // are still attempted. Throwing here instead would let a single trip the
+    // server will not take stop every other trip on the phone from syncing.
+    let pushedTrips = 0;
+    let tripProblem: string | undefined;
     for (const row of dirtyRows) {
       const payload = normaliseForPostgres(row);
       const { data, error } = await supabase.rpc('upsert_own_trip', {
         p_trip: payload,
         p_display_name: displayName,
       });
-      if (error) throw new Error(`push trips: ${error.message}`);
+      if (error) {
+        tripProblem ??= `push trips: ${error.message}`;
+        continue;
+      }
 
       // Both of these belong to the server. `join_code` comes back rewritten in
       // the one case this device cannot detect on its own: the code it generated
@@ -148,34 +206,38 @@ async function pushTable(
         extra.join_code = stamped.join_code;
       }
       await stampPushedRow(db, table, row, stamped.updated_at ?? null, extra);
+      pushedTrips += 1;
     }
-    return dirtyRows.length;
+    if (tripProblem) throw new Error(tripProblem);
+    return pushedTrips;
   }
 
   const payload = dirtyRows.map(normaliseForPostgres);
   const naturalKey = NATURAL_KEYS[table];
   const onConflict = (naturalKey ?? ['id']).join(',');
-  const { data, error } = await supabase
-    .from(table)
-    .upsert(payload, { onConflict })
-    .select();
-  if (error) throw new Error(`push ${table}: ${error.message}`);
+  const { landed, problem } = await upsertRows(table, payload, onConflict);
 
   // Matched on the natural key where there is one: the server may have resolved
   // the upsert onto a row it minted under a different id.
   const serverRows = new Map<string, Record<string, unknown>>();
-  for (const remote of data ?? []) {
-    serverRows.set(matchKey(remote as Record<string, unknown>, naturalKey), remote);
+  for (const remote of landed) {
+    serverRows.set(matchKey(remote, naturalKey), remote);
   }
 
+  // Only rows the server actually confirmed lose their dirty flag. Clearing it
+  // on a row that was rejected would mark it clean while the server has never
+  // seen it, and nothing would ever send it again.
+  let pushed = 0;
   for (const row of dirtyRows) {
     const remote = serverRows.get(matchKey(row, naturalKey));
-    const serverUpdatedAt =
-      typeof remote?.updated_at === 'string' ? remote.updated_at : null;
+    if (!remote) continue;
+    const serverUpdatedAt = typeof remote.updated_at === 'string' ? remote.updated_at : null;
     await stampPushedRow(db, table, row, serverUpdatedAt);
+    pushed += 1;
   }
 
-  return dirtyRows.length;
+  if (problem) throw new Error(problem);
+  return pushed;
 }
 
 /**
@@ -201,17 +263,21 @@ async function applyRemoteRows(
       if (naturalKey) {
         // The same row under a different id. `ON CONFLICT(id)` cannot see that
         // collision, so the unique index would abort the entire pull. Settle it
-        // the way every other conflict here is settled — newest write wins. A
-        // newer local row keeps its id and hands it to the server on the next
-        // push, which upserts on this same key.
-        const dup = await db.getFirstAsync<{ id: string; updated_at: string }>(
-          `SELECT id, updated_at FROM ${table}
+        // the way every other conflict here is settled — newest write wins,
+        // except that a dirty duplicate holds an edit the server has not seen
+        // and is never deleted, exactly as the WHERE clause below never
+        // overwrites one. Skipped instead: the next push carries the local row
+        // up on this same key, and the two stores converge on it then.
+        const dup = await db.getFirstAsync<{ id: string; updated_at: string; dirty: number }>(
+          `SELECT id, updated_at, dirty FROM ${table}
            WHERE ${naturalKey.map((c) => `${c} = ?`).join(' AND ')} AND id <> ?`,
           ...naturalKey.map((c) => row[c] as string),
           row.id as string
         );
         if (dup) {
-          if (!isNewerThan(row.updated_at as string, dup.updated_at)) continue;
+          if (dup.dirty === 1 || !isNewerThan(row.updated_at as string, dup.updated_at)) {
+            continue;
+          }
           await db.runAsync(`DELETE FROM ${table} WHERE id = ?`, dup.id);
         }
       }

@@ -30,6 +30,11 @@ Most changes do not need a build. `expo-updates` is enabled, so JavaScript reach
 - anything in `app.json` — icon, splash, scheme, permissions, plugins
 - the `version` in `app.json` (see [runtime versions](#runtime-versions-and-why-an-update-can-miss))
 
+One exception: the `platforms` key in `app.json` only tells the bundler which
+platforms to export for (it exists so `eas update` does not try to build a web
+bundle this app cannot make). Changing it changes nothing native, so it does
+not need a build.
+
 Quick check before assuming:
 
 ```bash

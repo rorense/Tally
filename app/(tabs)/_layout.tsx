@@ -83,9 +83,9 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="shopback"
+        name="cashback"
         options={{
-          ...brandHeader('ShopBack'),
+          ...brandHeader('Cashback'),
           tabBarIcon: ({ color }) => <TabIcon glyph={'\u21BA'} color={color} />,
         }}
       />

@@ -24,6 +24,11 @@
       "channel": "trip",
       "autoIncrement": true
     },
+    "trip-testflight": {
+      "distribution": "store",
+      "channel": "trip",
+      "autoIncrement": true
+    },
     "production": {
       "distribution": "store",
       "channel": "production",

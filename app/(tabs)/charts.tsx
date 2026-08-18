@@ -7,6 +7,7 @@ import { Bar, CartesianChart, Line, Pie, PolarChart } from 'victory-native';
 import { Card, EmptyState } from '../../src/components/ui';
 import {
   listCountries,
+  pretripSpentNzd,
   spentByCategory,
   spentByCountry,
   spentByDay,
@@ -35,19 +36,22 @@ export default function ChartsScreen() {
   const [byCountry, setByCountry] = useState<{ country_code: string; total: number }[]>([]);
   const [byDay, setByDay] = useState<{ local_date: string; total: number }[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
+  const [pretripTotal, setPretripTotal] = useState(0);
 
   const load = useCallback(async () => {
     if (!activeTrip) return;
-    const [cat, country, day, allCountries] = await Promise.all([
+    const [cat, country, day, allCountries, pretrip] = await Promise.all([
       spentByCategory(db, activeTrip.id),
       spentByCountry(db, activeTrip.id),
-      spentByDay(db, activeTrip.id),
+      spentByDay(db, activeTrip.id, activeTrip.start_date),
       listCountries(db),
+      pretripSpentNzd(db, activeTrip.id, activeTrip.start_date),
     ]);
     setByCategory(cat);
     setByCountry(country);
     setByDay(day);
     setCountries(allCountries);
+    setPretripTotal(pretrip);
   }, [db, activeTrip]);
 
   useFocusEffect(
@@ -99,7 +103,12 @@ export default function ChartsScreen() {
   const cumulativeData = useMemo(() => {
     if (!activeTrip) return [];
     const budget = activeTrip.total_budget_nzd;
-    let running = 0;
+    // The line starts at pre-trip spend rather than at zero. Flights and hotels
+    // bought before leaving have no day on this axis, but the budget still pays
+    // for them, so leaving them out compared a partial total against the whole
+    // budget: the chart read "on track" while the dashboard, which counts them,
+    // said the budget was already gone.
+    let running = pretripTotal;
     return dailyData.map((d, i) => {
       running = round2(running + d.spend);
       return {
@@ -109,7 +118,7 @@ export default function ChartsScreen() {
         pace: budgetPaceNzd(budget, activeTrip.start_date, activeTrip.end_date, i + 1),
       };
     });
-  }, [dailyData, activeTrip]);
+  }, [dailyData, activeTrip, pretripTotal]);
 
   if (!activeTrip) {
     return (
@@ -163,6 +172,7 @@ export default function ChartsScreen() {
           {dailyData.length > 0
             ? `${formatShortDate(dailyData[0].date)} to ${formatShortDate(dailyData[dailyData.length - 1].date)} · NZD`
             : 'NZD'}
+          {pretripTotal > 0 ? ` · excludes ${formatNzd(pretripTotal)} pretrip` : ''}
         </Text>
         <View style={{ height: 220, marginTop: spacing.lg }}>
           <CartesianChart
@@ -207,6 +217,7 @@ export default function ChartsScreen() {
           <Text style={styles.title}>Cumulative vs budget</Text>
           <Text style={styles.subtitle}>
             {`Budget ${formatNzd(activeTrip.total_budget_nzd)} spread evenly across the trip`}
+            {pretripTotal > 0 ? ` · starts at ${formatNzd(pretripTotal)} pretrip` : ''}
           </Text>
           <View style={{ height: 220, marginTop: spacing.lg }}>
             <CartesianChart

@@ -10,11 +10,15 @@ import {
   View,
 } from 'react-native';
 import { ChipRow, EmptyState } from '../../src/components/ui';
-import { listCountries, listExpenses } from '../../src/db/repository';
+import {
+  listCountries,
+  listExpenses,
+  listUsedCountryCodes,
+} from '../../src/db/repository';
 import { CATEGORIES, type Category, type Country, type Expense } from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
-import { formatMoney, formatNzd } from '../../src/lib/money';
-import { netExpenseNzd } from '../../src/lib/shopback';
+import { formatMoney, formatNzd, round2 } from '../../src/lib/money';
+import { cashbackSourceLabel, confirmedCashbackNzd } from '../../src/lib/cashback';
 import { useApp } from '../../src/hooks/useApp';
 import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
@@ -27,6 +31,9 @@ export default function ExpensesScreen() {
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
+  // Only offer country filters for places that actually have expenses — read
+  // from the whole trip, not from the currently filtered list.
+  const [usedCountries, setUsedCountries] = useState<string[]>([]);
   const [category, setCategory] = useState<Category | null>(null);
   const [countryCode, setCountryCode] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -34,6 +41,7 @@ export default function ExpensesScreen() {
   const load = useCallback(async () => {
     if (!activeTrip) return setExpenses([]);
     setCountries(await listCountries(db));
+    setUsedCountries(await listUsedCountryCodes(db, activeTrip.id));
     setExpenses(
       await listExpenses(db, activeTrip.id, {
         category,
@@ -48,12 +56,6 @@ export default function ExpensesScreen() {
       load();
     }, [load, revision])
   );
-
-  // Only offer country filters for places that actually have expenses.
-  const usedCountries = useMemo(() => {
-    const codes = Array.from(new Set(expenses.map((e) => e.country_code)));
-    return codes.sort();
-  }, [expenses]);
 
   const sections = useMemo(() => {
     const groups = new Map<string, Expense[]>();
@@ -71,7 +73,10 @@ export default function ExpensesScreen() {
       })
       .map(([date, data]) => ({
         title: date,
-        total: data.reduce((sum, e) => sum + netExpenseNzd(e), 0),
+        // Gross, so the day adds up to the row prices printed beneath it. The
+        // cashback earned that day is shown beside it rather than folded in.
+        total: round2(data.reduce((sum, e) => sum + e.amount_nzd, 0)),
+        cashback: round2(data.reduce((sum, e) => sum + confirmedCashbackNzd(e), 0)),
         data,
       }));
   }, [expenses]);
@@ -102,7 +107,7 @@ export default function ExpensesScreen() {
           colorFor={(v) => (v === 'All' ? colors.accent : colors.category[v as Category])}
         />
 
-        {usedCountries.length > 1 ? (
+        {usedCountries.length > 1 || countryCode ? (
           <View style={{ marginTop: spacing.sm }}>
             <ChipRow
               options={['All', ...usedCountries]}
@@ -133,11 +138,20 @@ export default function ExpensesScreen() {
             <Text style={styles.sectionDate}>
               {section.title === 'pretrip' ? 'Pretrip' : formatLongDate(section.title)}
             </Text>
-            <Text style={styles.sectionTotal}>{formatNzd(section.total)}</Text>
+            <View style={styles.sectionTotals}>
+              {section.cashback > 0 ? (
+                <Text style={[styles.sectionTotal, { color: colors.success }]}>
+                  {`−${formatNzd(section.cashback)}`}
+                </Text>
+              ) : null}
+              <Text style={styles.sectionTotal}>{formatNzd(section.total)}</Text>
+            </View>
           </View>
         )}
         renderItem={({ item }) => {
           const country = countries.find((c) => c.country_code === item.country_code);
+          const cashbackNzd = item.shopback_amount_nzd ?? 0;
+          const cashbackStatus = item.shopback_type ? (item.shopback_status ?? 'pending') : null;
           return (
             <Pressable style={styles.row} onPress={() => router.push(`/expense/${item.id}`)}>
               <View style={[styles.bar, { backgroundColor: colors.category[item.category] }]} />
@@ -148,18 +162,32 @@ export default function ExpensesScreen() {
                 <Text style={styles.meta}>
                   {`${item.category} \u00B7 ${country?.name ?? item.country_code}`}
                   {item.shopback_type
-                    ? ` \u00B7 SB ${
-                        item.shopback_status === 'confirmed'
-                          ? '✓'
-                          : item.shopback_status === 'cancelled'
-                            ? '✗'
-                            : '…'
-                      }`
+                    ? ` \u00B7 ${cashbackSourceLabel(item.shopback_type)}`
                     : ''}
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
+                {/* What the purchase cost, before any cashback, so the figure
+                    matches the receipt. The rebate gets its own line below
+                    rather than being netted off silently. */}
                 <Text style={styles.nzd}>{formatNzd(item.amount_nzd)}</Text>
+                {cashbackStatus && cashbackNzd > 0 ? (
+                  <Text
+                    style={[
+                      styles.cashback,
+                      cashbackStatus === 'confirmed'
+                        ? { color: colors.success }
+                        : cashbackStatus === 'pending'
+                          ? { color: colors.warning }
+                          : { color: colors.textFaint },
+                    ]}>
+                    {cashbackStatus === 'confirmed'
+                      ? `−${formatNzd(cashbackNzd)}`
+                      : `${formatNzd(cashbackNzd)} ${
+                          cashbackStatus === 'pending' ? 'pending' : 'declined'
+                        }`}
+                  </Text>
+                ) : null}
                 {item.currency !== 'NZD' ? (
                   <Text style={styles.original}>
                     {formatMoney(item.amount, item.currency)}
@@ -206,6 +234,7 @@ const createStyles = (c: Colors) =>
       marginBottom: spacing.sm,
     },
     sectionDate: { ...type.label, color: c.textMuted },
+    sectionTotals: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     sectionTotal: { ...type.label, color: c.textFaint },
     row: {
       flexDirection: 'row',
@@ -222,6 +251,7 @@ const createStyles = (c: Colors) =>
     desc: { ...type.body, color: c.text },
     meta: { ...type.caption, color: c.textFaint, marginTop: 1 },
     nzd: { ...type.heading, color: c.text },
+    cashback: { ...type.caption, fontWeight: '600', marginTop: 1 },
     original: { ...type.caption, color: c.textFaint },
     fab: {
       position: 'absolute',

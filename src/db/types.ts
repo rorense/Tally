@@ -55,14 +55,19 @@ export interface CategoryBudget extends SyncColumns {
   budget_nzd: number;
 }
 
-/** How ShopBack cashback is calculated on an expense. */
-export type ShopbackType = 'flat' | 'percent';
+/**
+ * How cashback is calculated on an expense. `card` is a percentage too, but
+ * from the credit card's own rate rather than a per-purchase offer, so it
+ * defaults to the rate in Settings instead of being typed in each time.
+ */
+export type CashbackType = 'flat' | 'percent' | 'card';
 
 /**
- * Lifecycle of a ShopBack claim. `pending` until you verify it landed in the
- * ShopBack account; `cancelled` covers declined or expired offers.
+ * Lifecycle of a cashback claim. ShopBack offers start `pending` until you
+ * verify the rebate landed; card cashback starts `confirmed` because it posts
+ * to the statement on its own. `cancelled` covers declined or expired offers.
  */
-export type ShopbackStatus = 'pending' | 'confirmed' | 'cancelled';
+export type CashbackStatus = 'pending' | 'confirmed' | 'cancelled';
 
 export interface Expense extends SyncColumns {
   id: string;
@@ -92,14 +97,21 @@ export interface Expense extends SyncColumns {
    */
   is_pretrip: number;
   paid_by: string | null;
-  /** Null when the purchase has no ShopBack offer. */
-  shopback_type: ShopbackType | null;
+  /**
+   * Null when the purchase earns no cashback.
+   *
+   * The `shopback_` column prefix predates card cashback and stays as-is: the
+   * name is shared with Postgres and with whatever build the other phone is
+   * running, so renaming it mid-trip would need a migration on both sides for
+   * no behavioural gain.
+   */
+  shopback_type: CashbackType | null;
   /** Flat amount in the expense currency, or a percentage (e.g. 5 for 5%). */
   shopback_value: number | null;
   /** Cashback in the expense currency, derived from type + value. */
   shopback_amount: number | null;
   shopback_amount_nzd: number | null;
-  shopback_status: ShopbackStatus | null;
+  shopback_status: CashbackStatus | null;
   shopback_confirmed_at: string | null;
 }
 

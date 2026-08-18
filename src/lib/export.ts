@@ -1,8 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { listCategoryBudgets, listExpenses } from '../db/repository';
 import { CATEGORIES, type Trip } from '../db/types';
+import { csvEscape } from './csv';
 import { round2 } from './money';
-import { netExpenseNzd } from './shopback';
+import { netExpenseNzd } from './cashback';
 import { buildXlsx, type Sheet } from './xlsx';
 
 export interface ExportData {
@@ -11,11 +12,6 @@ export interface ExportData {
   /** Filename stem, without an extension. */
   baseName: string;
   rowCount: number;
-}
-
-function csvEscape(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /** `YYYY-MM-DD` → `DD/MM`, matching the hand-maintained trip workbook. */
@@ -57,7 +53,7 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
   }
 
   const total = round2(ordered.reduce((sum, e) => sum + netExpenseNzd(e), 0));
-  const shopbackConfirmed = round2(
+  const cashbackConfirmed = round2(
     ordered.reduce(
       (sum, e) =>
         sum + (e.shopback_status === 'confirmed' ? (e.shopback_amount_nzd ?? 0) : 0),
@@ -81,9 +77,9 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     sidePanel.push([currency, rate]);
   }
   sidePanel.push(['', '']);
-  sidePanel.push(['Total (net ShopBack)', total]);
-  if (shopbackConfirmed > 0) {
-    sidePanel.push(['ShopBack confirmed', shopbackConfirmed]);
+  sidePanel.push(['Total (net cashback)', total]);
+  if (cashbackConfirmed > 0) {
+    sidePanel.push(['Cashback confirmed', cashbackConfirmed]);
   }
   sidePanel.push(['', '']);
   sidePanel.push(['Category Spends', '']);
@@ -140,11 +136,11 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     'Amount',
     'Currency',
     'NZD Equivalent',
-    'ShopBack Type',
-    'ShopBack Value',
-    'ShopBack Amount',
-    'ShopBack NZD',
-    'ShopBack Status',
+    'Cashback Type',
+    'Cashback Value',
+    'Cashback Amount',
+    'Cashback NZD',
+    'Cashback Status',
     'Net NZD',
     'Day Total',
   ];
@@ -162,11 +158,11 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
       { header: 'Amount', width: 12, format: 'money' },
       { header: 'Currency', width: 10 },
       { header: 'NZD Equivalent', width: 14, format: 'money' },
-      { header: 'ShopBack Type', width: 12 },
-      { header: 'ShopBack Value', width: 12, format: 'money' },
-      { header: 'ShopBack Amount', width: 14, format: 'money' },
-      { header: 'ShopBack NZD', width: 12, format: 'money' },
-      { header: 'ShopBack Status', width: 12 },
+      { header: 'Cashback Type', width: 12 },
+      { header: 'Cashback Value', width: 12, format: 'money' },
+      { header: 'Cashback Amount', width: 14, format: 'money' },
+      { header: 'Cashback NZD', width: 12, format: 'money' },
+      { header: 'Cashback Status', width: 12 },
       { header: 'Net NZD', width: 12, format: 'money' },
       { header: 'Day Total', width: 12, format: 'money' },
       { header: 'Currency Conversion (1 unit equals NZD)', width: 42 },

@@ -7,7 +7,7 @@ import type {
   Country,
   Expense,
   FxRate,
-  ShopbackStatus,
+  CashbackStatus,
   Trip,
   TripLeg,
   TripMember,
@@ -352,6 +352,26 @@ export async function listExpenses(
   );
 }
 
+/**
+ * Every country this trip has spending in, ignoring any active filter.
+ *
+ * Deriving the filter's own options from the filtered list is a trap: choosing
+ * a country narrows the list to that one country, the row of chips collapses to
+ * a single entry, and the "All" chip that would clear the filter disappears
+ * with it.
+ */
+export async function listUsedCountryCodes(
+  db: SQLiteDatabase,
+  tripId: string
+): Promise<string[]> {
+  const rows = await db.getAllAsync<{ country_code: string }>(
+    `SELECT DISTINCT country_code FROM expenses
+     WHERE trip_id = ? AND deleted_at IS NULL ORDER BY country_code`,
+    tripId
+  );
+  return rows.map((r) => r.country_code);
+}
+
 export async function getExpense(db: SQLiteDatabase, id: string): Promise<Expense | null> {
   return db.getFirstAsync<Expense>(
     'SELECT * FROM expenses WHERE id = ? AND deleted_at IS NULL',
@@ -439,11 +459,11 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
   );
 }
 
-/** Confirm, cancel, or reopen a ShopBack claim without rewriting the expense. */
-export async function updateShopbackStatus(
+/** Confirm, cancel, or reopen a Cashback claim without rewriting the expense. */
+export async function updateCashbackStatus(
   db: SQLiteDatabase,
   id: string,
-  status: ShopbackStatus
+  status: CashbackStatus
 ) {
   const t = touch();
   const confirmedAt = status === 'confirmed' ? t.updated_at : null;
@@ -457,10 +477,10 @@ export async function updateShopbackStatus(
   );
 }
 
-export async function listShopbackExpenses(
+export async function listCashbackExpenses(
   db: SQLiteDatabase,
   tripId: string,
-  status: ShopbackStatus | null = null
+  status: CashbackStatus | null = null
 ): Promise<Expense[]> {
   const where = [
     'trip_id = ?',
@@ -481,7 +501,7 @@ export async function listShopbackExpenses(
   );
 }
 
-export interface ShopbackSummary {
+export interface CashbackSummary {
   pending_nzd: number;
   confirmed_nzd: number;
   cancelled_nzd: number;
@@ -490,10 +510,10 @@ export interface ShopbackSummary {
   cancelled_count: number;
 }
 
-export async function shopbackSummary(
+export async function cashbackSummary(
   db: SQLiteDatabase,
   tripId: string
-): Promise<ShopbackSummary> {
+): Promise<CashbackSummary> {
   const rows = await db.getAllAsync<{
     shopback_status: string;
     total: number;
@@ -506,7 +526,7 @@ export async function shopbackSummary(
     tripId
   );
 
-  const summary: ShopbackSummary = {
+  const summary: CashbackSummary = {
     pending_nzd: 0,
     confirmed_nzd: 0,
     cancelled_nzd: 0,
@@ -530,7 +550,7 @@ export async function shopbackSummary(
   return summary;
 }
 
-export async function shopbackByCategory(
+export async function cashbackByCategory(
   db: SQLiteDatabase,
   tripId: string
 ): Promise<{ category: Category; total: number }[]> {
@@ -554,11 +574,22 @@ export async function deleteExpense(db: SQLiteDatabase, id: string) {
 
 // ---------------------------------------------------------------- aggregates
 
-/** Confirmed ShopBack reduces effective spend; pending/cancelled do not. */
+/** Confirmed Cashback reduces effective spend; pending/cancelled do not. */
 const NET_NZD = `amount_nzd - CASE
   WHEN shopback_status = 'confirmed' THEN COALESCE(shopback_amount_nzd, 0)
   ELSE 0
 END`;
+
+/**
+ * What counts as spend from before the trip. Takes the trip start date.
+ *
+ * The flag is the explicit answer, but an expense dated before the trip starts
+ * belongs in the same bucket: the charts draw an axis from the start date, so
+ * anything earlier has no column to land in and vanishes from the daily bars
+ * and the cumulative line without appearing anywhere else. The export already
+ * groups it this way; matching here is what keeps the two agreeing.
+ */
+const IS_PRETRIP = `(is_pretrip = 1 OR local_date < ?)`;
 
 export async function totalSpentNzd(db: SQLiteDatabase, tripId: string): Promise<number> {
   const row = await db.getFirstAsync<{ total: number | null }>(
@@ -592,14 +623,34 @@ export async function spentByCountry(
 
 export async function spentByDay(
   db: SQLiteDatabase,
-  tripId: string
+  tripId: string,
+  startDate: string
 ): Promise<{ local_date: string; total: number }[]> {
   return db.getAllAsync(
     `SELECT local_date, SUM(${NET_NZD}) AS total FROM expenses
-     WHERE trip_id = ? AND deleted_at IS NULL AND is_pretrip = 0
+     WHERE trip_id = ? AND deleted_at IS NULL AND NOT ${IS_PRETRIP}
      GROUP BY local_date ORDER BY local_date`,
-    tripId
+    tripId,
+    startDate
   );
+}
+
+/**
+ * Spend that predates the trip. Counts toward the budget but not toward any
+ * trip day, so the cumulative chart uses it as the line's starting height.
+ */
+export async function pretripSpentNzd(
+  db: SQLiteDatabase,
+  tripId: string,
+  startDate: string
+): Promise<number> {
+  const row = await db.getFirstAsync<{ total: number | null }>(
+    `SELECT SUM(${NET_NZD}) AS total FROM expenses
+     WHERE trip_id = ? AND deleted_at IS NULL AND ${IS_PRETRIP}`,
+    tripId,
+    startDate
+  );
+  return row?.total ?? 0;
 }
 
 export async function spentOnDay(

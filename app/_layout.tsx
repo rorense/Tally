@@ -50,9 +50,18 @@ function Navigator() {
           headerTintColor: colors.text,
           headerTitleStyle: { fontWeight: '700' },
           headerShadowVisible: false,
+          // A bare chevron. The screen behind is whichever tab you pushed from,
+          // so no one back label is right for all of them. iOS only; Android
+          // already draws the arrow on its own.
+          headerBackButtonDisplayMode: 'minimal',
           contentStyle: { backgroundColor: colors.bg },
         }}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/*
+          * Header hidden, but still titled: the back chevron long-presses into a
+          * menu listing earlier screens by title, and with none set React
+          * Navigation falls back to the route name and shows "(tabs)" there.
+          */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Tally' }} />
         <Stack.Screen name="expense/[id]" options={{ title: 'Expense', presentation: 'modal' }} />
         <Stack.Screen name="trip/edit" options={{ title: 'Trip' }} />
         <Stack.Screen name="trip/join" options={{ title: 'Join a trip' }} />

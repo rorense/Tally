@@ -136,7 +136,7 @@ const MIGRATIONS: Migration[] = [
   },
   {
     to: 3,
-    // Optional ShopBack cashback per expense: flat amount or percentage, with a
+    // Optional cashback per expense: flat amount or percentage, with a
     // pending → confirmed / cancelled verification flow.
     up: async (db) => {
       await db.execAsync(`
@@ -151,7 +151,7 @@ const MIGRATIONS: Migration[] = [
   },
   {
     to: 4,
-    // ShopBack NZD must use the mid-market rate only (no card markup). Rewrite
+    // Cashback NZD must use the mid-market rate only (no card markup). Rewrite
     // any values that were saved while markup was incorrectly applied.
     up: async (db) => {
       await db.execAsync(`

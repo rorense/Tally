@@ -7,7 +7,7 @@ import type {
   Country,
   Expense,
   FxRate,
-  ShopbackStatus,
+  CashbackStatus,
   Trip,
   TripLeg,
   TripMember,
@@ -459,11 +459,11 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
   );
 }
 
-/** Confirm, cancel, or reopen a ShopBack claim without rewriting the expense. */
-export async function updateShopbackStatus(
+/** Confirm, cancel, or reopen a Cashback claim without rewriting the expense. */
+export async function updateCashbackStatus(
   db: SQLiteDatabase,
   id: string,
-  status: ShopbackStatus
+  status: CashbackStatus
 ) {
   const t = touch();
   const confirmedAt = status === 'confirmed' ? t.updated_at : null;
@@ -477,10 +477,10 @@ export async function updateShopbackStatus(
   );
 }
 
-export async function listShopbackExpenses(
+export async function listCashbackExpenses(
   db: SQLiteDatabase,
   tripId: string,
-  status: ShopbackStatus | null = null
+  status: CashbackStatus | null = null
 ): Promise<Expense[]> {
   const where = [
     'trip_id = ?',
@@ -501,7 +501,7 @@ export async function listShopbackExpenses(
   );
 }
 
-export interface ShopbackSummary {
+export interface CashbackSummary {
   pending_nzd: number;
   confirmed_nzd: number;
   cancelled_nzd: number;
@@ -510,10 +510,10 @@ export interface ShopbackSummary {
   cancelled_count: number;
 }
 
-export async function shopbackSummary(
+export async function cashbackSummary(
   db: SQLiteDatabase,
   tripId: string
-): Promise<ShopbackSummary> {
+): Promise<CashbackSummary> {
   const rows = await db.getAllAsync<{
     shopback_status: string;
     total: number;
@@ -526,7 +526,7 @@ export async function shopbackSummary(
     tripId
   );
 
-  const summary: ShopbackSummary = {
+  const summary: CashbackSummary = {
     pending_nzd: 0,
     confirmed_nzd: 0,
     cancelled_nzd: 0,
@@ -550,7 +550,7 @@ export async function shopbackSummary(
   return summary;
 }
 
-export async function shopbackByCategory(
+export async function cashbackByCategory(
   db: SQLiteDatabase,
   tripId: string
 ): Promise<{ category: Category; total: number }[]> {
@@ -574,7 +574,7 @@ export async function deleteExpense(db: SQLiteDatabase, id: string) {
 
 // ---------------------------------------------------------------- aggregates
 
-/** Confirmed ShopBack reduces effective spend; pending/cancelled do not. */
+/** Confirmed Cashback reduces effective spend; pending/cancelled do not. */
 const NET_NZD = `amount_nzd - CASE
   WHEN shopback_status = 'confirmed' THEN COALESCE(shopback_amount_nzd, 0)
   ELSE 0

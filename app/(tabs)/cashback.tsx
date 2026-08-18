@@ -4,31 +4,35 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, ChipRow, EmptyState, ProgressBar } from '../../src/components/ui';
 import {
-  listShopbackExpenses,
-  shopbackByCategory,
-  shopbackSummary,
+  listCashbackExpenses,
+  cashbackByCategory,
+  cashbackSummary,
   totalSpentNzd,
-  updateShopbackStatus,
-  type ShopbackSummary,
+  updateCashbackStatus,
+  type CashbackSummary,
 } from '../../src/db/repository';
-import type { Category, Expense, ShopbackStatus } from '../../src/db/types';
+import type { Category, Expense, CashbackStatus } from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
-import { formatMoney, formatNzd, round2 } from '../../src/lib/money';
-import { shopbackStatusLabel } from '../../src/lib/shopback';
+import { formatNzd, round2 } from '../../src/lib/money';
+import {
+  cashbackSourceLabel,
+  cashbackStatusLabel,
+  cashbackValueLabel,
+} from '../../src/lib/cashback';
 import { useApp } from '../../src/hooks/useApp';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
 type Filter = 'Pending' | 'Confirmed' | 'Cancelled' | 'All';
 
-function statusFromFilter(f: Filter): ShopbackStatus | null {
+function statusFromFilter(f: Filter): CashbackStatus | null {
   if (f === 'Pending') return 'pending';
   if (f === 'Confirmed') return 'confirmed';
   if (f === 'Cancelled') return 'cancelled';
   return null;
 }
 
-export default function ShopbackScreen() {
+export default function CashbackScreen() {
   const db = useSQLiteContext();
   const { activeTrip, revision, refresh } = useApp();
   const styles = useThemedStyles(createStyles);
@@ -36,7 +40,7 @@ export default function ShopbackScreen() {
 
   const [filter, setFilter] = useState<Filter>('Pending');
   const [items, setItems] = useState<Expense[]>([]);
-  const [summary, setSummary] = useState<ShopbackSummary | null>(null);
+  const [summary, setSummary] = useState<CashbackSummary | null>(null);
   const [byCategory, setByCategory] = useState<{ category: Category; total: number }[]>([]);
   const [tripSpend, setTripSpend] = useState(0);
 
@@ -49,9 +53,9 @@ export default function ShopbackScreen() {
       return;
     }
     const [list, sum, cats, spent] = await Promise.all([
-      listShopbackExpenses(db, activeTrip.id, statusFromFilter(filter)),
-      shopbackSummary(db, activeTrip.id),
-      shopbackByCategory(db, activeTrip.id),
+      listCashbackExpenses(db, activeTrip.id, statusFromFilter(filter)),
+      cashbackSummary(db, activeTrip.id),
+      cashbackByCategory(db, activeTrip.id),
       totalSpentNzd(db, activeTrip.id),
     ]);
     setItems(list);
@@ -82,8 +86,8 @@ export default function ShopbackScreen() {
     return { totalClaims, confirmRate, expectedNzd, cashbackRate };
   }, [summary, tripSpend]);
 
-  async function setStatus(id: string, status: ShopbackStatus) {
-    await updateShopbackStatus(db, id, status);
+  async function setStatus(id: string, status: CashbackStatus) {
+    await updateCashbackStatus(db, id, status);
     refresh();
     await load();
   }
@@ -91,7 +95,7 @@ export default function ShopbackScreen() {
   if (!activeTrip) {
     return (
       <View style={styles.screen}>
-        <EmptyState title="No trip yet" subtitle="Create a trip to track ShopBack cashback." />
+        <EmptyState title="No trip yet" subtitle="Create a trip to track cashback." />
       </View>
     );
   }
@@ -100,8 +104,8 @@ export default function ShopbackScreen() {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         <EmptyState
-          title="No ShopBack yet"
-          subtitle="When you log an expense with Flat or % cashback, it shows up here so you can confirm it landed in ShopBack."
+          title="No cashback yet"
+          subtitle="Tag an expense as Credit card, Flat or % and it shows up here. Card cashback lands on its own; ShopBack offers wait for you to confirm them."
         />
       </ScrollView>
     );
@@ -196,15 +200,13 @@ export default function ShopbackScreen() {
       {items.length === 0 ? (
         <EmptyState
           title={filter === 'All' ? 'No claims' : `No ${filter.toLowerCase()} claims`}
-          subtitle="Try another filter, or add ShopBack on an expense."
+          subtitle="Try another filter, or add cashback on an expense."
         />
       ) : (
         items.map((item) => {
           const status = item.shopback_status ?? 'pending';
-          const valueLabel =
-            item.shopback_type === 'percent'
-              ? `${item.shopback_value}%`
-              : formatMoney(item.shopback_value ?? 0, item.currency);
+          const cbType = item.shopback_type ?? 'percent';
+          const valueLabel = cashbackValueLabel(cbType, item.shopback_value, item.currency);
 
           return (
             <View key={item.id} style={styles.claim}>
@@ -217,7 +219,7 @@ export default function ShopbackScreen() {
                   </Text>
                   <Text style={styles.claimMeta}>
                     {item.is_pretrip === 1 ? 'Pretrip' : formatLongDate(item.local_date)} ·{' '}
-                    {item.category} · {valueLabel}
+                    {item.category} · {cashbackSourceLabel(cbType)} {valueLabel}
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -231,7 +233,7 @@ export default function ShopbackScreen() {
                       status === 'confirmed' && { color: colors.success },
                       status === 'cancelled' && { color: colors.textFaint },
                     ]}>
-                    {shopbackStatusLabel(status)}
+                    {cashbackStatusLabel(status)}
                   </Text>
                 </View>
               </Pressable>

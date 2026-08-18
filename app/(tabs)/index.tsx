@@ -10,7 +10,7 @@ import {
   listCategoryBudgets,
   listCountries,
   listExpenses,
-  shopbackSummary,
+  cashbackSummary,
   spentByCategory,
   spentOnDay,
   totalSpentNzd,
@@ -19,7 +19,6 @@ import { CATEGORIES, type Category, type Expense } from '../../src/db/types';
 import { daysBetween, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact } from '../../src/lib/money';
 import { budgetPaceNzd } from '../../src/lib/pace';
-import { netExpenseNzd } from '../../src/lib/shopback';
 import { useApp } from '../../src/hooks/useApp';
 import { useSync } from '../../src/hooks/useSync';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
@@ -33,8 +32,8 @@ interface Dash {
   recent: Expense[];
   currentCountry: string | null;
   currentCurrency: string | null;
-  shopbackConfirmed: number;
-  shopbackPending: number;
+  cashbackConfirmed: number;
+  cashbackPending: number;
 }
 
 export default function DashboardScreen() {
@@ -49,7 +48,7 @@ export default function DashboardScreen() {
     if (!activeTrip) return setData(null);
     const today = todayLocal();
 
-    const [total, today_, byCategory, budgetRows, recent, leg, countries, shopback] =
+    const [total, today_, byCategory, budgetRows, recent, leg, countries, cashback] =
       await Promise.all([
         totalSpentNzd(db, activeTrip.id),
         spentOnDay(db, activeTrip.id, today),
@@ -58,7 +57,7 @@ export default function DashboardScreen() {
         listExpenses(db, activeTrip.id),
         findLegForDate(db, activeTrip.id, today),
         listCountries(db),
-        shopbackSummary(db, activeTrip.id),
+        cashbackSummary(db, activeTrip.id),
       ]);
 
     const country = leg ? countries.find((c) => c.country_code === leg.country_code) : null;
@@ -71,8 +70,8 @@ export default function DashboardScreen() {
       recent: recent.slice(0, 6),
       currentCountry: country?.name ?? null,
       currentCurrency: leg?.currency_code ?? null,
-      shopbackConfirmed: shopback.confirmed_nzd,
-      shopbackPending: shopback.pending_nzd,
+      cashbackConfirmed: cashback.confirmed_nzd,
+      cashbackPending: cashback.pending_nzd,
     });
   }, [db, activeTrip]);
 
@@ -96,9 +95,9 @@ export default function DashboardScreen() {
 
   const budget = activeTrip.total_budget_nzd;
   const spent = data?.total ?? 0;
-  const shopbackConfirmed = data?.shopbackConfirmed ?? 0;
-  const shopbackPending = data?.shopbackPending ?? 0;
-  const spentBeforeShopback = spent + shopbackConfirmed;
+  const cashbackConfirmed = data?.cashbackConfirmed ?? 0;
+  const cashbackPending = data?.cashbackPending ?? 0;
+  const spentBeforeCashback = spent + cashbackConfirmed;
   const remaining = budget - spent;
   const tripDays = daysBetween(activeTrip.start_date, activeTrip.end_date) + 1;
   const elapsed = Math.min(
@@ -171,35 +170,35 @@ export default function DashboardScreen() {
 
         <Text style={styles.bigTotal}>{formatNzd(spent)}</Text>
         <Text style={styles.bigTotalLabel}>
-          {shopbackConfirmed > 0 ? 'After ShopBack' : 'Spent so far'}
+          {cashbackConfirmed > 0 ? 'After cashback' : 'Spent so far'}
           {budget > 0 ? ` \u00B7 of ${formatNzd(budget)}` : ''}
           {' \u00B7 NZD'}
         </Text>
 
-        {shopbackConfirmed > 0 || shopbackPending > 0 ? (
+        {cashbackConfirmed > 0 || cashbackPending > 0 ? (
           <Pressable
             style={styles.spendBreakdown}
-            onPress={() => router.push('/(tabs)/shopback')}
+            onPress={() => router.push('/(tabs)/cashback')}
             accessibilityRole="button"
-            accessibilityLabel="Open ShopBack">
+            accessibilityLabel="Open Cashback">
             <View style={styles.spendRow}>
-              <Text style={styles.spendRowLabel}>Before ShopBack</Text>
-              <Text style={styles.spendRowValue}>{formatNzd(spentBeforeShopback)}</Text>
+              <Text style={styles.spendRowLabel}>Before cashback</Text>
+              <Text style={styles.spendRowValue}>{formatNzd(spentBeforeCashback)}</Text>
             </View>
-            {shopbackConfirmed > 0 ? (
+            {cashbackConfirmed > 0 ? (
               <View style={styles.spendRow}>
                 <Text style={[styles.spendRowLabel, { color: colors.success }]}>
-                  Confirmed ShopBack
+                  Confirmed cashback
                 </Text>
                 <Text style={[styles.spendRowValue, { color: colors.success }]}>
-                  −{formatNzd(shopbackConfirmed)}
+                  −{formatNzd(cashbackConfirmed)}
                 </Text>
               </View>
             ) : null}
-            {shopbackPending > 0 ? (
+            {cashbackPending > 0 ? (
               <View style={styles.spendRow}>
-                <Text style={styles.spendRowMuted}>Pending ShopBack</Text>
-                <Text style={styles.spendRowMuted}>{formatNzd(shopbackPending)}</Text>
+                <Text style={styles.spendRowMuted}>Pending cashback</Text>
+                <Text style={styles.spendRowMuted}>{formatNzd(cashbackPending)}</Text>
               </View>
             ) : null}
           </Pressable>
@@ -295,9 +294,9 @@ export default function DashboardScreen() {
                   {`${e.is_pretrip === 1 ? 'Pretrip' : formatShortDate(e.local_date)} \u00B7 ${e.country_code}`}
                 </Text>
               </View>
-              {/* Net of confirmed ShopBack, so a row reads the same here as it
-                  does in the list and in the trip total above it. */}
-              <Text style={styles.expenseAmount}>{formatNzd(netExpenseNzd(e))}</Text>
+              {/* Gross, so a row reads the same here as it does on the Expenses
+                  tab. The cashback comes off in the trip total above. */}
+              <Text style={styles.expenseAmount}>{formatNzd(e.amount_nzd)}</Text>
             </Pressable>
           ))
         ) : (

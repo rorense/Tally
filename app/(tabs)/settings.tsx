@@ -41,6 +41,7 @@ export default function SettingsScreen() {
 
   const [members, setMembers] = useState<TripMember[]>([]);
   const [markup, setMarkup] = useState(String(settings.cardMarkupPct));
+  const [cardCashback, setCardCashback] = useState(String(settings.cardCashbackPct));
   const [displayName, setDisplayName] = useState(settings.displayName);
   const [exporting, setExporting] = useState<'xlsx' | 'csv' | null>(null);
 
@@ -136,6 +137,13 @@ export default function SettingsScreen() {
     const clamped = Math.min(Math.max(parsed, 0), 15);
     setMarkup(String(clamped));
     updateSetting('cardMarkupPct', clamped);
+  }
+
+  function saveCardCashback() {
+    const parsed = parseAmount(cardCashback) ?? 0;
+    const clamped = Math.min(Math.max(parsed, 0), 100);
+    setCardCashback(String(clamped));
+    updateSetting('cardCashbackPct', clamped);
   }
 
   return (
@@ -324,6 +332,24 @@ export default function SettingsScreen() {
             const ok = await refreshRates();
             if (!ok) Alert.alert('Could not reach the rate service', 'Cached rates are still in use.');
           }}
+        />
+      </Card>
+
+      <Card>
+        <Text style={styles.cardTitle}>Cashback</Text>
+        <Caption>
+          Tagging an expense as Credit card fills in this rate and counts it as confirmed
+          straight away, since card cashback posts to the statement on its own.
+        </Caption>
+        <View style={{ height: spacing.lg }} />
+        <Field
+          label="Credit card cashback %"
+          value={cardCashback}
+          onChangeText={setCardCashback}
+          onBlur={saveCardCashback}
+          keyboardType="decimal-pad"
+          placeholder="0.8"
+          hint="The rate your card pays back on spending. You can still type a different rate on an individual expense."
         />
       </Card>
 

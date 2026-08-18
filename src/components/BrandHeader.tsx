@@ -45,7 +45,7 @@ function TallyMark({ size = 22 }: { size?: number }) {
 
 /**
  * Lively tab header: brand mark + Tally, with an optional section line under it
- * on Expenses / Charts / ShopBack / Settings.
+ * on Expenses / Charts / Cashback / Settings.
  */
 export function BrandHeaderTitle({ section }: { section?: string }) {
   const styles = useThemedStyles(createStyles);

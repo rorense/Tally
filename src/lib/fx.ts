@@ -2,7 +2,10 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { getFxRate, listFxRates, saveFxRates } from '../db/repository';
 import type { FxRate } from '../db/types';
 
-const FRANKFURTER = 'https://api.frankfurter.app/latest?base=NZD';
+// The old api.frankfurter.app host now answers 301 and redirects here. Following
+// it works, but a redirect is one more thing to fail on a bad hotel connection,
+// so the current host is used directly.
+const FRANKFURTER = 'https://api.frankfurter.dev/v1/latest?base=NZD';
 const ER_API = 'https://open.er-api.com/v6/latest/NZD';
 const TIMEOUT_MS = 12_000;
 
@@ -17,6 +20,14 @@ function invert(rates: Record<string, number>): Record<string, number> {
     if (typeof perNzd === 'number' && perNzd > 0) out[code] = 1 / perNzd;
   }
   return out;
+}
+
+/** Turns a thrown value into something short enough to show on the settings card. */
+function describe(err: unknown): string {
+  if (err instanceof Error) {
+    return err.name === 'AbortError' ? `timed out after ${TIMEOUT_MS / 1000}s` : err.message;
+  }
+  return String(err);
 }
 
 async function fetchJson(url: string): Promise<any> {
@@ -40,9 +51,14 @@ export interface FetchRatesResult {
  * Frankfurter (ECB) is the primary source but only publishes ~30 currencies, so
  * open.er-api.com fills in the rest. Their results are merged rather than one
  * replacing the other, with ECB winning where both have a value.
+ *
+ * When neither responds the thrown message names both reasons. Nothing else in
+ * the app records why a refresh failed, and "it just doesn't update" is not a
+ * fault anyone can act on from the other side of the world.
  */
 export async function fetchRates(): Promise<FetchRatesResult> {
   const results: Record<string, number> = {};
+  const failures: string[] = [];
   let source: FetchRatesResult['source'] = 'er-api';
   let sawAny = false;
 
@@ -52,9 +68,12 @@ export async function fetchRates(): Promise<FetchRatesResult> {
     if (data?.result === 'success' && data.rates) {
       Object.assign(results, invert(data.rates));
       sawAny = true;
+    } else {
+      failures.push('er-api: unexpected response');
     }
-  } catch {
+  } catch (err) {
     // Offline or upstream down. The cached rates in SQLite remain valid.
+    failures.push(`er-api: ${describe(err)}`);
   }
 
   try {
@@ -63,23 +82,32 @@ export async function fetchRates(): Promise<FetchRatesResult> {
       Object.assign(results, invert(data.rates));
       source = 'frankfurter';
       sawAny = true;
+    } else {
+      failures.push('frankfurter: unexpected response');
     }
-  } catch {
+  } catch (err) {
     // ECB unavailable; whatever er-api returned still stands.
+    failures.push(`frankfurter: ${describe(err)}`);
   }
 
-  if (!sawAny) throw new Error('No rate source reachable');
+  if (!sawAny) throw new Error(failures.join(' \u00B7 ') || 'No rate source reachable');
   return { rates: results, source };
 }
 
-/** Fetches and caches. Returns false when offline rather than throwing. */
-export async function refreshRates(db: SQLiteDatabase): Promise<boolean> {
+export interface RefreshResult {
+  ok: boolean;
+  /** Null on success. Shown verbatim on the settings card when it is not. */
+  error: string | null;
+}
+
+/** Fetches and caches. Reports why it failed rather than throwing. */
+export async function refreshRates(db: SQLiteDatabase): Promise<RefreshResult> {
   try {
     const { rates } = await fetchRates();
     await saveFxRates(db, rates);
-    return true;
-  } catch {
-    return false;
+    return { ok: true, error: null };
+  } catch (err) {
+    return { ok: false, error: describe(err) };
   }
 }
 

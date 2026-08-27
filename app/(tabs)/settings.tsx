@@ -34,7 +34,12 @@ export default function SettingsScreen() {
   const db = useSQLiteContext();
   const { activeTrip, trips, setActiveTrip, settings, updateSetting, refresh } = useApp();
   const { session, email, configured, signOut } = useAuth();
-  const { rates, refresh: refreshRates, refreshing } = useRates();
+  const {
+    rates,
+    refresh: refreshRates,
+    refreshing,
+    lastError: rateError,
+  } = useRates();
   const { syncNow, syncing, pending, lastError } = useSync();
   const styles = useThemedStyles(createStyles);
   const { colors, scheme } = useTheme();
@@ -314,6 +319,13 @@ export default function SettingsScreen() {
             ? `${rates.size} currencies cached \u00B7 ${rateAgeLabel(nzdSample?.fetched_at) ?? 'unknown age'}`
             : 'No rates cached yet. Connect once before you fly.'}
         </Caption>
+        {/*
+          * A failed background refresh used to leave no trace at all, so rates
+          * that never arrived looked identical to rates that were simply fresh.
+          */}
+        {rateError ? (
+          <Text style={styles.rateError}>Last attempt failed: {rateError}</Text>
+        ) : null}
         <View style={{ height: spacing.lg }} />
         <Field
           label="Card markup %"
@@ -329,8 +341,17 @@ export default function SettingsScreen() {
           variant="secondary"
           loading={refreshing}
           onPress={async () => {
-            const ok = await refreshRates();
-            if (!ok) Alert.alert('Could not reach the rate service', 'Cached rates are still in use.');
+            // The reason comes back with the call; reading `rateError` here
+            // would show the previous attempt's, one render behind.
+            const { ok, error } = await refreshRates();
+            if (!ok) {
+              Alert.alert(
+                'Could not reach the rate service',
+                `Cached rates are still in use.
+
+${error ?? 'No reason reported.'}`
+              );
+            }
           }}
         />
       </Card>
@@ -401,6 +422,7 @@ export default function SettingsScreen() {
 const createStyles = (c: Colors) =>
   StyleSheet.create({
     cardTitle: { ...type.heading, color: c.text, marginBottom: spacing.sm },
+    rateError: { ...type.caption, color: c.danger, marginTop: spacing.xs },
     subLabel: {
       ...type.label,
       color: c.textMuted,

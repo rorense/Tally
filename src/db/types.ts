@@ -59,8 +59,20 @@ export interface CategoryBudget extends SyncColumns {
  * How cashback is calculated on an expense. `card` is a percentage too, but
  * from the credit card's own rate rather than a per-purchase offer, so it
  * defaults to the rate in Settings instead of being typed in each time.
+ *
+ * `card` is now only ever read out of `shopback_type`, never written there.
+ * Builds from before a purchase could claim both schemes stored the card claim
+ * in the `shopback_*` columns, and rows in that shape still arrive from a
+ * partner phone that has not updated yet.
  */
 export type CashbackType = 'flat' | 'percent' | 'card';
+
+/**
+ * Which scheme pays a claim. One purchase can earn from both at once — going
+ * through ShopBack to reach the merchant and then tapping the card at the till
+ * — so the two are stored side by side rather than as one exclusive choice.
+ */
+export type CashbackSource = 'card' | 'shopback';
 
 /**
  * Lifecycle of a cashback claim. ShopBack offers start `pending` until you
@@ -113,6 +125,16 @@ export interface Expense extends SyncColumns {
   shopback_amount_nzd: number | null;
   shopback_status: CashbackStatus | null;
   shopback_confirmed_at: string | null;
+  /**
+   * The credit card's own cashback, kept in its own columns so one purchase can
+   * earn from the card and from ShopBack at the same time. Always a percentage
+   * of the spend, so there is no `card_type` to match `shopback_type`.
+   */
+  card_value: number | null;
+  card_amount: number | null;
+  card_amount_nzd: number | null;
+  card_status: CashbackStatus | null;
+  card_confirmed_at: string | null;
 }
 
 export interface FxRate {

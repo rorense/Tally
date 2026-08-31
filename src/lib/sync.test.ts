@@ -107,6 +107,7 @@ test('normaliseForSqlite canonicalises instants but leaves calendar dates alone'
     updated_at: '2027-01-05T09:53:12.123456+00:00',
     spent_at: '2027-01-05T09:53:12.5+00:00',
     shopback_confirmed_at: null,
+    card_confirmed_at: '2027-01-05T09:53:12+00:00',
     // Date-only columns are the day the traveller was standing in. Running
     // these through a Date would shift them across the dateline.
     local_date: '2027-01-05',
@@ -115,6 +116,7 @@ test('normaliseForSqlite canonicalises instants but leaves calendar dates alone'
   assert.equal(out.updated_at, '2027-01-05T09:53:12.123Z');
   assert.equal(out.spent_at, '2027-01-05T09:53:12.500Z');
   assert.equal(out.shopback_confirmed_at, null);
+  assert.equal(out.card_confirmed_at, '2027-01-05T09:53:12.000Z');
   assert.equal(out.local_date, '2027-01-05');
   assert.equal(out.start_date, '2027-01-01');
 });

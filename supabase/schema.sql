@@ -86,6 +86,13 @@ create table if not exists public.expenses (
   shopback_amount_nzd numeric,
   shopback_status text,
   shopback_confirmed_at timestamptz,
+  -- The card's own cashback, separate from ShopBack so one purchase can claim
+  -- both. Always a percentage, so there is no card_type beside shopback_type.
+  card_value numeric,
+  card_amount numeric,
+  card_amount_nzd numeric,
+  card_status text,
+  card_confirmed_at timestamptz,
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
@@ -99,6 +106,16 @@ alter table public.expenses add column if not exists shopback_amount numeric;
 alter table public.expenses add column if not exists shopback_amount_nzd numeric;
 alter table public.expenses add column if not exists shopback_status text;
 alter table public.expenses add column if not exists shopback_confirmed_at timestamptz;
+
+-- Run this file BEFORE shipping the build that writes these columns. A push is
+-- `select *` off the device, so a phone holding a column Postgres does not have
+-- fails every expense it tries to send. Adding them early costs nothing: an
+-- older phone never sends them, and pulls drop columns it does not know.
+alter table public.expenses add column if not exists card_value numeric;
+alter table public.expenses add column if not exists card_amount numeric;
+alter table public.expenses add column if not exists card_amount_nzd numeric;
+alter table public.expenses add column if not exists card_status text;
+alter table public.expenses add column if not exists card_confirmed_at timestamptz;
 
 -- Pre-trip bookings were called "preflight" for one release. Rename rather than
 -- add, so a project from that window keeps the rows it already has.

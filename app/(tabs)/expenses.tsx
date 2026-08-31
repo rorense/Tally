@@ -15,10 +15,20 @@ import {
   listExpenses,
   listUsedCountryCodes,
 } from '../../src/db/repository';
-import { CATEGORIES, type Category, type Country, type Expense } from '../../src/db/types';
+import {
+  CATEGORIES,
+  type CashbackStatus,
+  type Category,
+  type Country,
+  type Expense,
+} from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
 import { formatMoney, formatNzd, round2 } from '../../src/lib/money';
-import { cashbackSourceLabel, confirmedCashbackNzd } from '../../src/lib/cashback';
+import {
+  cashbackClaims,
+  cashbackSourceLabel,
+  confirmedCashbackNzd,
+} from '../../src/lib/cashback';
 import { useApp } from '../../src/hooks/useApp';
 import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
@@ -150,8 +160,19 @@ export default function ExpensesScreen() {
         )}
         renderItem={({ item }) => {
           const country = countries.find((c) => c.country_code === item.country_code);
-          const cashbackNzd = item.shopback_amount_nzd ?? 0;
-          const cashbackStatus = item.shopback_type ? (item.shopback_status ?? 'pending') : null;
+          // A purchase can claim from both schemes, so the row totals them by
+          // state rather than showing a single claim.
+          const claims = cashbackClaims(item);
+          const sources = claims.map((c) => cashbackSourceLabel(c.source)).join(' + ');
+          const totalFor = (status: CashbackStatus) =>
+            round2(
+              claims
+                .filter((c) => c.status === status)
+                .reduce((sum, c) => sum + c.amount_nzd, 0)
+            );
+          const confirmedNzd = totalFor('confirmed');
+          const pendingNzd = totalFor('pending');
+          const declinedNzd = totalFor('cancelled');
           return (
             <Pressable style={styles.row} onPress={() => router.push(`/expense/${item.id}`)}>
               <View style={[styles.bar, { backgroundColor: colors.category[item.category] }]} />
@@ -161,9 +182,7 @@ export default function ExpensesScreen() {
                 </Text>
                 <Text style={styles.meta}>
                   {`${item.category} \u00B7 ${country?.name ?? item.country_code}`}
-                  {item.shopback_type
-                    ? ` \u00B7 ${cashbackSourceLabel(item.shopback_type)}`
-                    : ''}
+                  {sources ? ` \u00B7 ${sources}` : ''}
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
@@ -171,21 +190,20 @@ export default function ExpensesScreen() {
                     matches the receipt. The rebate gets its own line below
                     rather than being netted off silently. */}
                 <Text style={styles.nzd}>{formatNzd(item.amount_nzd)}</Text>
-                {cashbackStatus && cashbackNzd > 0 ? (
-                  <Text
-                    style={[
-                      styles.cashback,
-                      cashbackStatus === 'confirmed'
-                        ? { color: colors.success }
-                        : cashbackStatus === 'pending'
-                          ? { color: colors.warning }
-                          : { color: colors.textFaint },
-                    ]}>
-                    {cashbackStatus === 'confirmed'
-                      ? `−${formatNzd(cashbackNzd)}`
-                      : `${formatNzd(cashbackNzd)} ${
-                          cashbackStatus === 'pending' ? 'pending' : 'declined'
-                        }`}
+                {confirmedNzd > 0 ? (
+                  <Text style={[styles.cashback, { color: colors.success }]}>
+                    −{formatNzd(confirmedNzd)}
+                  </Text>
+                ) : null}
+                {pendingNzd > 0 ? (
+                  <Text style={[styles.cashback, { color: colors.warning }]}>
+                    {formatNzd(pendingNzd)} pending
+                  </Text>
+                ) : null}
+                {/* Only worth a line of its own when nothing else came back. */}
+                {confirmedNzd === 0 && pendingNzd === 0 && declinedNzd > 0 ? (
+                  <Text style={[styles.cashback, { color: colors.textFaint }]}>
+                    {formatNzd(declinedNzd)} declined
                   </Text>
                 ) : null}
                 {item.currency !== 'NZD' ? (

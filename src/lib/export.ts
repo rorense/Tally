@@ -3,7 +3,7 @@ import { listCategoryBudgets, listExpenses } from '../db/repository';
 import { CATEGORIES, type Trip } from '../db/types';
 import { csvEscape } from './csv';
 import { round2 } from './money';
-import { netExpenseNzd } from './cashback';
+import { cashbackClaims, confirmedCashbackNzd, netExpenseNzd } from './cashback';
 import { buildXlsx, type Sheet } from './xlsx';
 
 export interface ExportData {
@@ -54,11 +54,7 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
 
   const total = round2(ordered.reduce((sum, e) => sum + netExpenseNzd(e), 0));
   const cashbackConfirmed = round2(
-    ordered.reduce(
-      (sum, e) =>
-        sum + (e.shopback_status === 'confirmed' ? (e.shopback_amount_nzd ?? 0) : 0),
-      0
-    )
+    ordered.reduce((sum, e) => sum + confirmedCashbackNzd(e), 0)
   );
 
   // One rate per currency: prefer the most recent expense's frozen rate.
@@ -103,6 +99,13 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     const dateLabel =
       key === 'pretrip' ? 'Pretrip' : isFirstOfDay ? formatDayLabel(e.local_date) : '';
 
+    // Split by scheme rather than by column, so a purchase that claimed both
+    // exports both, and one whose card claim still sits in the shopback_*
+    // columns exports under Card where it belongs.
+    const claims = cashbackClaims(e);
+    const shopback = claims.find((c) => c.source === 'shopback');
+    const card = claims.find((c) => c.source === 'card');
+
     ledgerRows.push([
       dateLabel,
       e.category,
@@ -110,17 +113,20 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
       round2(e.amount),
       e.currency,
       round2(e.amount_nzd),
-      e.shopback_type ?? '',
-      e.shopback_value != null ? round2(e.shopback_value) : '',
-      e.shopback_amount != null ? round2(e.shopback_amount) : '',
-      e.shopback_amount_nzd != null ? round2(e.shopback_amount_nzd) : '',
-      e.shopback_status ?? '',
+      shopback?.type ?? '',
+      shopback?.value != null ? round2(shopback.value) : '',
+      shopback?.amount != null ? round2(shopback.amount) : '',
+      shopback ? round2(shopback.amount_nzd) : '',
+      shopback?.status ?? '',
+      card?.value != null ? round2(card.value) : '',
+      card ? round2(card.amount_nzd) : '',
+      card?.status ?? '',
       round2(netExpenseNzd(e)),
       isFirstOfDay ? round2(dayTotals.get(key) ?? 0) : '',
     ]);
   }
 
-  const emptyLedger = ['', '', '', '', '', '', '', '', '', '', '', '', ''];
+  const emptyLedger = Array<string>(16).fill('');
   const rowCount = Math.max(ledgerRows.length, sidePanel.length);
   const sheetRows: (string | number)[][] = [];
   for (let i = 0; i < rowCount; i++) {
@@ -136,11 +142,14 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     'Amount',
     'Currency',
     'NZD Equivalent',
-    'Cashback Type',
-    'Cashback Value',
-    'Cashback Amount',
-    'Cashback NZD',
-    'Cashback Status',
+    'ShopBack Type',
+    'ShopBack Value',
+    'ShopBack Amount',
+    'ShopBack NZD',
+    'ShopBack Status',
+    'Card %',
+    'Card NZD',
+    'Card Status',
     'Net NZD',
     'Day Total',
   ];
@@ -158,11 +167,14 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
       { header: 'Amount', width: 12, format: 'money' },
       { header: 'Currency', width: 10 },
       { header: 'NZD Equivalent', width: 14, format: 'money' },
-      { header: 'Cashback Type', width: 12 },
-      { header: 'Cashback Value', width: 12, format: 'money' },
-      { header: 'Cashback Amount', width: 14, format: 'money' },
-      { header: 'Cashback NZD', width: 12, format: 'money' },
-      { header: 'Cashback Status', width: 12 },
+      { header: 'ShopBack Type', width: 12 },
+      { header: 'ShopBack Value', width: 12, format: 'money' },
+      { header: 'ShopBack Amount', width: 14, format: 'money' },
+      { header: 'ShopBack NZD', width: 12, format: 'money' },
+      { header: 'ShopBack Status', width: 12 },
+      { header: 'Card %', width: 10 },
+      { header: 'Card NZD', width: 12, format: 'money' },
+      { header: 'Card Status', width: 12 },
       { header: 'Net NZD', width: 12, format: 'money' },
       { header: 'Day Total', width: 12, format: 'money' },
       { header: 'Currency Conversion (1 unit equals NZD)', width: 42 },

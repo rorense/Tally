@@ -18,6 +18,7 @@ const INSTANT_COLUMNS = new Set([
   'deleted_at',
   'spent_at',
   'shopback_confirmed_at',
+  'card_confirmed_at',
 ]);
 
 /**

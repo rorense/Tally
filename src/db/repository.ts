@@ -1,12 +1,14 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { nowIso } from '../lib/dates';
+import { cashbackClaims, type CashbackClaim } from '../lib/cashback';
 import type {
   Category,
   CategoryBudget,
   Country,
   Expense,
   FxRate,
+  CashbackSource,
   CashbackStatus,
   Trip,
   TripLeg,
@@ -400,8 +402,9 @@ export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Pr
     `INSERT INTO expenses (id, trip_id, leg_id, country_code, category, description, amount,
       currency, rate_to_nzd, amount_nzd, spent_at, local_date, is_pretrip, paid_by,
       shopback_type, shopback_value, shopback_amount, shopback_amount_nzd, shopback_status,
-      shopback_confirmed_at, updated_at, deleted_at, dirty)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)`,
+      shopback_confirmed_at, card_value, card_amount, card_amount_nzd, card_status,
+      card_confirmed_at, updated_at, deleted_at, dirty)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)`,
     id,
     input.trip_id,
     input.leg_id,
@@ -422,6 +425,11 @@ export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Pr
     input.shopback_amount_nzd,
     input.shopback_status,
     input.shopback_confirmed_at,
+    input.card_value,
+    input.card_amount,
+    input.card_amount_nzd,
+    input.card_status,
+    input.card_confirmed_at,
     t.updated_at
   );
   return id;
@@ -434,7 +442,8 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
       amount = ?, currency = ?, rate_to_nzd = ?, amount_nzd = ?, spent_at = ?, local_date = ?,
       is_pretrip = ?, paid_by = ?, shopback_type = ?, shopback_value = ?, shopback_amount = ?,
       shopback_amount_nzd = ?, shopback_status = ?, shopback_confirmed_at = ?,
-      updated_at = ?, dirty = 1 WHERE id = ?`,
+      card_value = ?, card_amount = ?, card_amount_nzd = ?, card_status = ?,
+      card_confirmed_at = ?, updated_at = ?, dirty = 1 WHERE id = ?`,
     input.trip_id,
     input.leg_id,
     input.country_code,
@@ -454,19 +463,52 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
     input.shopback_amount_nzd,
     input.shopback_status,
     input.shopback_confirmed_at,
+    input.card_value,
+    input.card_amount,
+    input.card_amount_nzd,
+    input.card_status,
+    input.card_confirmed_at,
     t.updated_at,
     id
   );
 }
 
-/** Confirm, cancel, or reopen a Cashback claim without rewriting the expense. */
+/**
+ * Confirm, cancel, or reopen one scheme's claim without rewriting the expense
+ * or disturbing the other scheme's claim on the same purchase.
+ */
 export async function updateCashbackStatus(
   db: SQLiteDatabase,
   id: string,
+  source: CashbackSource,
   status: CashbackStatus
 ) {
   const t = touch();
   const confirmedAt = status === 'confirmed' ? t.updated_at : null;
+
+  // A card claim logged before the two schemes could coexist still sits in the
+  // shopback_* columns, so which pair to write is a property of the row rather
+  // than of the source alone.
+  const row = await db.getFirstAsync<{
+    shopback_type: string | null;
+    card_value: number | null;
+    card_amount_nzd: number | null;
+  }>('SELECT shopback_type, card_value, card_amount_nzd FROM expenses WHERE id = ?', id);
+  const inCardColumns =
+    source === 'card' && (row?.card_value != null || row?.card_amount_nzd != null);
+
+  if (inCardColumns) {
+    await db.runAsync(
+      `UPDATE expenses SET card_status = ?, card_confirmed_at = ?,
+        updated_at = ?, dirty = 1 WHERE id = ?`,
+      status,
+      confirmedAt,
+      t.updated_at,
+      id
+    );
+    return;
+  }
+
   await db.runAsync(
     `UPDATE expenses SET shopback_status = ?, shopback_confirmed_at = ?,
       updated_at = ?, dirty = 1 WHERE id = ?`,
@@ -477,28 +519,37 @@ export async function updateCashbackStatus(
   );
 }
 
-export async function listCashbackExpenses(
+export interface CashbackClaimRow extends CashbackClaim {
+  expense: Expense;
+}
+
+/**
+ * Every cashback claim on a trip, one row per claim rather than per expense —
+ * a purchase that went through ShopBack and was paid on the card is two claims
+ * with their own statuses, and each is confirmed or cancelled on its own.
+ */
+export async function listCashbackClaims(
   db: SQLiteDatabase,
   tripId: string,
   status: CashbackStatus | null = null
-): Promise<Expense[]> {
-  const where = [
-    'trip_id = ?',
-    'deleted_at IS NULL',
-    'shopback_type IS NOT NULL',
-    'shopback_amount_nzd IS NOT NULL',
-  ];
-  const params: (string | number)[] = [tripId];
-  if (status) {
-    where.push('shopback_status = ?');
-    params.push(status);
-  }
-  return db.getAllAsync<Expense>(
-    `SELECT * FROM expenses WHERE ${where.join(' AND ')}
-     ORDER BY CASE shopback_status WHEN 'pending' THEN 0 WHEN 'confirmed' THEN 1 ELSE 2 END,
-       local_date DESC, spent_at DESC`,
-    params
+): Promise<CashbackClaimRow[]> {
+  const rows = await db.getAllAsync<Expense>(
+    `SELECT * FROM expenses
+     WHERE trip_id = ? AND deleted_at IS NULL
+       AND (shopback_type IS NOT NULL OR card_value IS NOT NULL OR card_amount_nzd IS NOT NULL)
+     ORDER BY local_date DESC, spent_at DESC`,
+    tripId
   );
+
+  const claims = rows.flatMap((expense) =>
+    cashbackClaims(expense).map((claim) => ({ ...claim, expense }))
+  );
+  const filtered = status === null ? claims : claims.filter((c) => c.status === status);
+
+  // Pending first: those are the ones still waiting on a decision. Array.sort
+  // is stable, so the date ordering from the query survives within each group.
+  const rank: Record<CashbackStatus, number> = { pending: 0, confirmed: 1, cancelled: 2 };
+  return filtered.sort((a, b) => rank[a.status] - rank[b.status]);
 }
 
 export interface CashbackSummary {
@@ -514,15 +565,28 @@ export async function cashbackSummary(
   db: SQLiteDatabase,
   tripId: string
 ): Promise<CashbackSummary> {
+  // One row per claim, not per expense, so a purchase claiming both schemes is
+  // counted twice on purpose. COALESCE mirrors the defaults `cashbackClaims`
+  // applies, so the tab's totals and its list cannot drift apart.
   const rows = await db.getAllAsync<{
-    shopback_status: string;
+    status: string;
     total: number;
     count: number;
   }>(
-    `SELECT shopback_status, SUM(shopback_amount_nzd) AS total, COUNT(*) AS count
-     FROM expenses
-     WHERE trip_id = ? AND deleted_at IS NULL AND shopback_type IS NOT NULL
-     GROUP BY shopback_status`,
+    `SELECT status, SUM(nzd) AS total, COUNT(*) AS count FROM (
+       SELECT COALESCE(shopback_status, 'pending') AS status,
+              COALESCE(shopback_amount_nzd, 0) AS nzd
+       FROM expenses
+       WHERE trip_id = ? AND deleted_at IS NULL AND shopback_type IS NOT NULL
+       UNION ALL
+       SELECT COALESCE(card_status, 'confirmed') AS status,
+              COALESCE(card_amount_nzd, 0) AS nzd
+       FROM expenses
+       WHERE trip_id = ? AND deleted_at IS NULL
+         AND (card_value IS NOT NULL OR card_amount_nzd IS NOT NULL)
+     ) AS claims
+     GROUP BY status`,
+    tripId,
     tripId
   );
 
@@ -536,13 +600,13 @@ export async function cashbackSummary(
   };
 
   for (const row of rows) {
-    if (row.shopback_status === 'pending') {
+    if (row.status === 'pending') {
       summary.pending_nzd = row.total ?? 0;
       summary.pending_count = row.count;
-    } else if (row.shopback_status === 'confirmed') {
+    } else if (row.status === 'confirmed') {
       summary.confirmed_nzd = row.total ?? 0;
       summary.confirmed_count = row.count;
-    } else if (row.shopback_status === 'cancelled') {
+    } else if (row.status === 'cancelled') {
       summary.cancelled_nzd = row.total ?? 0;
       summary.cancelled_count = row.count;
     }
@@ -555,9 +619,19 @@ export async function cashbackByCategory(
   tripId: string
 ): Promise<{ category: Category; total: number }[]> {
   return db.getAllAsync(
-    `SELECT category, SUM(shopback_amount_nzd) AS total FROM expenses
-     WHERE trip_id = ? AND deleted_at IS NULL AND shopback_status = 'confirmed'
+    `SELECT category, SUM(nzd) AS total FROM (
+       SELECT category, COALESCE(shopback_amount_nzd, 0) AS nzd FROM expenses
+       WHERE trip_id = ? AND deleted_at IS NULL
+         AND shopback_type IS NOT NULL
+         AND COALESCE(shopback_status, 'pending') = 'confirmed'
+       UNION ALL
+       SELECT category, COALESCE(card_amount_nzd, 0) AS nzd FROM expenses
+       WHERE trip_id = ? AND deleted_at IS NULL
+         AND (card_value IS NOT NULL OR card_amount_nzd IS NOT NULL)
+         AND COALESCE(card_status, 'confirmed') = 'confirmed'
+     ) AS claims
      GROUP BY category ORDER BY total DESC`,
+    tripId,
     tripId
   );
 }
@@ -574,11 +648,23 @@ export async function deleteExpense(db: SQLiteDatabase, id: string) {
 
 // ---------------------------------------------------------------- aggregates
 
-/** Confirmed Cashback reduces effective spend; pending/cancelled do not. */
-const NET_NZD = `amount_nzd - CASE
-  WHEN shopback_status = 'confirmed' THEN COALESCE(shopback_amount_nzd, 0)
-  ELSE 0
-END`;
+/**
+ * Confirmed Cashback reduces effective spend; pending/cancelled do not. Both
+ * schemes come off, since a purchase can claim from each. The COALESCE on the
+ * status columns matches the defaults `cashbackClaims` applies, so these totals
+ * agree with the per-claim ones on the Cashback tab.
+ */
+const NET_NZD = `amount_nzd
+  - CASE
+      WHEN COALESCE(shopback_status, 'pending') = 'confirmed'
+        THEN COALESCE(shopback_amount_nzd, 0)
+      ELSE 0
+    END
+  - CASE
+      WHEN COALESCE(card_status, 'confirmed') = 'confirmed'
+        THEN COALESCE(card_amount_nzd, 0)
+      ELSE 0
+    END`;
 
 /**
  * What counts as spend from before the trip. Takes the trip start date.

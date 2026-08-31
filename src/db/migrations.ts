@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { COUNTRY_SEED } from './countries';
 
-const DATABASE_VERSION = 6;
+const DATABASE_VERSION = 7;
 
 interface Migration {
   /** The `user_version` the database carries once this step has committed. */
@@ -176,6 +176,45 @@ const MIGRATIONS: Migration[] = [
     // Renamed for the product language: pre-trip bookings, not "preflight".
     up: async (db) => {
       await db.execAsync(`ALTER TABLE expenses RENAME COLUMN is_preflight TO is_pretrip`);
+    },
+  },
+  {
+    to: 7,
+    /**
+     * Card cashback gets its own columns, so a purchase made through ShopBack
+     * and paid on the card can claim both instead of picking one.
+     *
+     * Existing card claims live in the `shopback_*` columns and are moved
+     * across. Deliberately without touching `updated_at` or `dirty`: the
+     * partner phone may still be on a build with no `card_*` columns, and
+     * pushing the moved shape would land there as a row whose `shopback_*` is
+     * suddenly empty, deleting a claim it can no longer see. Leaving the sync
+     * columns alone keeps the server on the old shape until the expense is
+     * next edited, and the read paths go on understanding both shapes anyway —
+     * which they have to, since a row in the old shape can arrive at any time.
+     */
+    up: async (db) => {
+      await db.execAsync(`
+        ALTER TABLE expenses ADD COLUMN card_value REAL;
+        ALTER TABLE expenses ADD COLUMN card_amount REAL;
+        ALTER TABLE expenses ADD COLUMN card_amount_nzd REAL;
+        ALTER TABLE expenses ADD COLUMN card_status TEXT;
+        ALTER TABLE expenses ADD COLUMN card_confirmed_at TEXT;
+
+        UPDATE expenses SET
+          card_value = shopback_value,
+          card_amount = shopback_amount,
+          card_amount_nzd = shopback_amount_nzd,
+          card_status = shopback_status,
+          card_confirmed_at = shopback_confirmed_at,
+          shopback_type = NULL,
+          shopback_value = NULL,
+          shopback_amount = NULL,
+          shopback_amount_nzd = NULL,
+          shopback_status = NULL,
+          shopback_confirmed_at = NULL
+        WHERE shopback_type = 'card';
+      `);
     },
   },
 ];

@@ -27,6 +27,7 @@ import { isValidDate, nowIso, todayLocal } from '../../src/lib/dates';
 import { convertToNzd, formatMoney, formatNzd, parseAmount } from '../../src/lib/money';
 import { isRateStale, rateAgeLabel } from '../../src/lib/fx';
 import {
+  cashbackClaims,
   computeCashbackAmount,
   computeCashbackNzd,
   initialCashbackStatus,
@@ -37,22 +38,41 @@ import { useRates } from '../../src/hooks/useRates';
 import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
-type CashbackMode = 'None' | 'Credit card' | 'Flat' | '%';
+/**
+ * The card is its own switch rather than a fourth chip: a purchase reached
+ * through ShopBack and then paid on the card earns from both, and making them
+ * one control meant picking which of the two to record.
+ */
+type ShopbackMode = 'None' | 'Flat' | '%';
 
-const CASHBACK_MODES = ['None', 'Credit card', 'Flat', '%'] as const;
+const SHOPBACK_MODES = ['None', 'Flat', '%'] as const;
 
-function modeFromType(t: CashbackType | null | undefined): CashbackMode {
-  if (t === 'card') return 'Credit card';
-  if (t === 'flat') return 'Flat';
-  if (t === 'percent') return '%';
-  return 'None';
-}
-
-function typeFromMode(m: CashbackMode): CashbackType | null {
-  if (m === 'Credit card') return 'card';
+function shopbackType(m: ShopbackMode): CashbackType | null {
   if (m === 'Flat') return 'flat';
   if (m === '%') return 'percent';
   return null;
+}
+
+/** Percentages cannot exceed the spend; a flat offer is just an amount. */
+function overHundred(type: CashbackType, value: number): boolean {
+  return type !== 'flat' && value > 100;
+}
+
+/**
+ * What a claim is worth at the rate this expense is being saved at, or null
+ * while the inputs are incomplete or out of range.
+ */
+function previewClaim(
+  expenseAmount: number | null,
+  type: CashbackType | null,
+  value: number | null,
+  rate: number | null
+): { amountLocal: number; amountNzd: number | null } | null {
+  if (!type || expenseAmount === null || value === null) return null;
+  if (value <= 0 || overHundred(type, value)) return null;
+  const amountLocal = computeCashbackAmount(expenseAmount, type, value);
+  if (rate === null) return { amountLocal, amountNzd: null };
+  return { amountLocal, amountNzd: computeCashbackNzd(amountLocal, rate) };
 }
 
 export default function ExpenseScreen() {
@@ -79,8 +99,10 @@ export default function ExpenseScreen() {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string | null>(null);
-  const [cashbackMode, setCashbackMode] = useState<CashbackMode>('None');
-  const [cashbackValue, setCashbackValue] = useState('');
+  const [cardOn, setCardOn] = useState(false);
+  const [cardValue, setCardValue] = useState('');
+  const [sbMode, setSbMode] = useState<ShopbackMode>('None');
+  const [sbValue, setSbValue] = useState('');
   // Tracks the date we last applied an itinerary leg for, so changing the date
   // re-infers country, but opening a fresh form keeps the last-used country.
   const lastAppliedDate = useRef<string | null>(null);
@@ -116,8 +138,16 @@ export default function ExpenseScreen() {
         setDescription(e.description);
         setAmount(String(e.amount));
         setPaidBy(e.paid_by);
-        setCashbackMode(modeFromType(e.shopback_type));
-        setCashbackValue(e.shopback_value != null ? String(e.shopback_value) : '');
+        // Read through the claims helper so an expense saved by an older build,
+        // with its card claim still in the shopback_* columns, opens with the
+        // card switch on rather than as a ShopBack offer.
+        const claims = cashbackClaims(e);
+        const card = claims.find((c) => c.source === 'card');
+        const shopback = claims.find((c) => c.source === 'shopback');
+        setCardOn(card != null);
+        setCardValue(card?.value != null ? String(card.value) : '');
+        setSbMode(shopback ? (shopback.type === 'flat' ? 'Flat' : '%') : 'None');
+        setSbValue(shopback?.value != null ? String(shopback.value) : '');
         lastAppliedDate.current = e.local_date;
       } else {
         setPaidBy(userId);
@@ -194,19 +224,14 @@ export default function ExpenseScreen() {
   }
 
   /**
-   * Picking Credit card fills in the card's rate from Settings, since it is the
-   * same on every purchase — type over it for the odd category that earns a
-   * different rate. Leaving card mode clears it again, because 0.8 is almost
-   * never the right ShopBack percentage or flat amount.
+   * Switching the card on fills in its rate from Settings, since it is the same
+   * on every purchase — type over it for the odd category that earns a
+   * different rate. An override already typed here survives being toggled off
+   * and back on.
    */
-  function changeCashbackMode(next: CashbackMode) {
-    if (next === cashbackMode) return;
-    if (next === 'Credit card') {
-      setCashbackValue(String(settings.cardCashbackPct));
-    } else if (cashbackMode === 'Credit card') {
-      setCashbackValue('');
-    }
-    setCashbackMode(next);
+  function toggleCard(next: boolean) {
+    if (next && !cardValue) setCardValue(String(settings.cardCashbackPct));
+    setCardOn(next);
   }
 
   const rate = rateFor(currency);
@@ -220,8 +245,9 @@ export default function ExpenseScreen() {
   const keptRate = existing && existing.currency === currency ? existing.rate_to_nzd : null;
   const effectiveRate = keptRate ?? rate?.rate_to_nzd ?? null;
   const parsedAmount = parseAmount(amount);
-  const parsedCashbackValue = parseAmount(cashbackValue);
-  const cashbackType = typeFromMode(cashbackMode);
+  const parsedCardValue = parseAmount(cardValue);
+  const parsedSbValue = parseAmount(sbValue);
+  const sbType = shopbackType(sbMode);
 
   const nzdPreview = useMemo(() => {
     if (parsedAmount === null || effectiveRate === null) return null;
@@ -236,26 +262,13 @@ export default function ExpenseScreen() {
     return convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct);
   }, [parsedAmount, effectiveRate, settings.cardMarkupPct, existing, keptRate, currency]);
 
-  // Card cashback is a percentage too, so it takes the same 100% ceiling.
-  const isPercentType = cashbackType === 'percent' || cashbackType === 'card';
-
-  const cashbackPreview = useMemo(() => {
-    if (!cashbackType || parsedAmount === null || parsedCashbackValue === null) return null;
-    if (parsedCashbackValue <= 0) return null;
-    if (isPercentType && parsedCashbackValue > 100) return null;
-    const amountLocal = computeCashbackAmount(parsedAmount, cashbackType, parsedCashbackValue);
-    if (effectiveRate === null) return { amountLocal, amountNzd: null as number | null };
-    return {
-      amountLocal,
-      amountNzd: computeCashbackNzd(amountLocal, effectiveRate),
-    };
-  }, [
-    cashbackType,
-    isPercentType,
+  const cardPreview = previewClaim(
     parsedAmount,
-    parsedCashbackValue,
-    effectiveRate,
-  ]);
+    cardOn ? 'card' : null,
+    parsedCardValue,
+    effectiveRate
+  );
+  const sbPreview = previewClaim(parsedAmount, sbType, parsedSbValue, effectiveRate);
 
   async function handleSave() {
     if (!activeTrip) return Alert.alert('No trip', 'Create a trip first.');
@@ -278,7 +291,14 @@ export default function ExpenseScreen() {
       );
     }
 
-    let cashbackFields: Pick<
+    // Read the old claims through the helper, so an expense whose card claim is
+    // still in the shopback_* columns keeps its confirmed/cancelled state when
+    // this save moves it across to the card_* ones.
+    const oldClaims = existing ? cashbackClaims(existing) : [];
+    const oldCard = oldClaims.find((c) => c.source === 'card');
+    const oldShopback = oldClaims.find((c) => c.source === 'shopback');
+
+    type CashbackFields = Pick<
       Expense,
       | 'shopback_type'
       | 'shopback_value'
@@ -286,45 +306,70 @@ export default function ExpenseScreen() {
       | 'shopback_amount_nzd'
       | 'shopback_status'
       | 'shopback_confirmed_at'
-    > = {
+      | 'card_value'
+      | 'card_amount'
+      | 'card_amount_nzd'
+      | 'card_status'
+      | 'card_confirmed_at'
+    >;
+
+    // Anything left off is written back as null, which is what clears a claim
+    // that has been switched off — including a legacy card claim in the
+    // shopback_* columns, now that it is being rewritten into its own.
+    const cashbackFields: CashbackFields = {
       shopback_type: null,
       shopback_value: null,
       shopback_amount: null,
       shopback_amount_nzd: null,
       shopback_status: null,
       shopback_confirmed_at: null,
+      card_value: null,
+      card_amount: null,
+      card_amount_nzd: null,
+      card_status: null,
+      card_confirmed_at: null,
     };
 
-    if (cashbackType) {
-      if (parsedCashbackValue === null || parsedCashbackValue <= 0) {
+    if (cardOn) {
+      if (parsedCardValue === null || parsedCardValue <= 0) {
+        return Alert.alert('Card cashback', 'Enter the card’s cashback percentage.');
+      }
+      if (overHundred('card', parsedCardValue)) {
+        return Alert.alert('Card cashback', 'Percentage must be 100 or less.');
+      }
+      const amountLocal = computeCashbackAmount(parsedAmount, 'card', parsedCardValue);
+      const status = oldCard?.status ?? initialCashbackStatus('card');
+      cashbackFields.card_value = parsedCardValue;
+      cashbackFields.card_amount = amountLocal;
+      cashbackFields.card_amount_nzd = computeCashbackNzd(amountLocal, effectiveRate);
+      cashbackFields.card_status = status;
+      cashbackFields.card_confirmed_at =
+        status === 'confirmed' ? (oldCard?.confirmed_at ?? nowIso()) : null;
+    }
+
+    if (sbType) {
+      if (parsedSbValue === null || parsedSbValue <= 0) {
         return Alert.alert(
-          'Cashback value',
-          isPercentType
-            ? 'Enter the cashback percentage.'
-            : 'Enter the flat cashback amount.'
+          'ShopBack cashback',
+          sbType === 'flat'
+            ? 'Enter the flat cashback amount.'
+            : 'Enter the cashback percentage.'
         );
       }
-      if (isPercentType && parsedCashbackValue > 100) {
-        return Alert.alert('Cashback value', 'Percentage must be 100 or less.');
+      if (overHundred(sbType, parsedSbValue)) {
+        return Alert.alert('ShopBack cashback', 'Percentage must be 100 or less.');
       }
-      const sbAmount = computeCashbackAmount(parsedAmount, cashbackType, parsedCashbackValue);
-      const sbNzd = computeCashbackNzd(sbAmount, effectiveRate);
-      // Editing a claim keeps whatever you confirmed or cancelled it as. Changing
-      // the scheme starts it over, so a ShopBack offer switched to Credit card
-      // confirms itself rather than sitting in the pending list forever.
-      const keepStatus =
-        existing?.shopback_type === cashbackType && existing.shopback_status
-          ? existing.shopback_status
-          : initialCashbackStatus(cashbackType);
-      cashbackFields = {
-        shopback_type: cashbackType,
-        shopback_value: parsedCashbackValue,
-        shopback_amount: sbAmount,
-        shopback_amount_nzd: sbNzd,
-        shopback_status: keepStatus,
-        shopback_confirmed_at:
-          keepStatus === 'confirmed' ? (existing?.shopback_confirmed_at ?? nowIso()) : null,
-      };
+      const amountLocal = computeCashbackAmount(parsedAmount, sbType, parsedSbValue);
+      // Correcting a flat offer to a percentage is still the same offer, so the
+      // status rides along rather than dropping back to pending.
+      const status = oldShopback?.status ?? initialCashbackStatus('shopback');
+      cashbackFields.shopback_type = sbType;
+      cashbackFields.shopback_value = parsedSbValue;
+      cashbackFields.shopback_amount = amountLocal;
+      cashbackFields.shopback_amount_nzd = computeCashbackNzd(amountLocal, effectiveRate);
+      cashbackFields.shopback_status = status;
+      cashbackFields.shopback_confirmed_at =
+        status === 'confirmed' ? (oldShopback?.confirmed_at ?? nowIso()) : null;
     }
 
     // Reopening an expense and saving without changing amount/currency must not
@@ -498,39 +543,67 @@ export default function ExpenseScreen() {
 
       <Card>
         <Text style={styles.sectionLabel}>Cashback</Text>
-        <ChipRow
-          options={CASHBACK_MODES}
-          value={cashbackMode}
-          onChange={changeCashbackMode}
-        />
-        {cashbackMode !== 'None' ? (
+
+        <View style={styles.switchRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.switchLabel}>Credit card</Text>
+            <Text style={styles.switchHint}>
+              Paid on the cashback card. Stacks with a ShopBack offer below.
+            </Text>
+          </View>
+          <Switch
+            value={cardOn}
+            onValueChange={toggleCard}
+            trackColor={{ true: colors.accent, false: colors.border }}
+          />
+        </View>
+
+        {cardOn ? (
+          <>
+            <Field
+              label="Card cashback %"
+              value={cardValue}
+              onChangeText={setCardValue}
+              placeholder="0.8"
+              keyboardType="decimal-pad"
+              hint="Your card’s rate, from Settings. Change it here for this purchase only."
+              containerStyle={{ marginBottom: spacing.sm }}
+            />
+            {cardPreview ? (
+              <Text style={styles.cashbackPreview}>
+                Expect {formatMoney(cardPreview.amountLocal, currency)}
+                {cardPreview.amountNzd != null ? ` (${formatNzd(cardPreview.amountNzd)})` : ''}{' '}
+                back · counted as confirmed straight away
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+
+        <View style={{ height: spacing.lg }} />
+
+        <Text style={styles.sectionLabel}>ShopBack</Text>
+        <ChipRow options={SHOPBACK_MODES} value={sbMode} onChange={setSbMode} />
+        {sbMode !== 'None' ? (
           <>
             <View style={{ height: spacing.md }} />
             <Field
-              label={cashbackMode === 'Flat' ? `Cashback (${currency})` : 'Cashback %'}
-              value={cashbackValue}
-              onChangeText={setCashbackValue}
-              placeholder={cashbackMode === 'Flat' ? '0.00' : '5'}
+              label={sbMode === 'Flat' ? `Cashback (${currency})` : 'Cashback %'}
+              value={sbValue}
+              onChangeText={setSbValue}
+              placeholder={sbMode === 'Flat' ? '0.00' : '5'}
               keyboardType="decimal-pad"
               hint={
-                cashbackMode === 'Credit card'
-                  ? 'Your card’s rate, from Settings. Change it here for this purchase only.'
-                  : cashbackMode === 'Flat'
-                    ? 'Flat amount ShopBack will credit for this purchase.'
-                    : 'Percentage of the spend ShopBack returns.'
+                sbMode === 'Flat'
+                  ? 'Flat amount ShopBack will credit for this purchase.'
+                  : 'Percentage of the spend ShopBack returns.'
               }
+              containerStyle={{ marginBottom: spacing.sm }}
             />
-            {cashbackPreview ? (
+            {sbPreview ? (
               <Text style={styles.cashbackPreview}>
-                Expect{' '}
-                {formatMoney(cashbackPreview.amountLocal, currency)}
-                {cashbackPreview.amountNzd != null
-                  ? ` (${formatNzd(cashbackPreview.amountNzd)})`
-                  : ''}{' '}
-                back ·{' '}
-                {cashbackMode === 'Credit card'
-                  ? 'counted as confirmed straight away'
-                  : 'verify on the Cashback tab'}
+                Expect {formatMoney(sbPreview.amountLocal, currency)}
+                {sbPreview.amountNzd != null ? ` (${formatNzd(sbPreview.amountNzd)})` : ''} back ·
+                verify on the Cashback tab
               </Text>
             ) : null}
           </>

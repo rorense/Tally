@@ -4,14 +4,15 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, ChipRow, EmptyState, ProgressBar } from '../../src/components/ui';
 import {
-  listCashbackExpenses,
+  listCashbackClaims,
   cashbackByCategory,
   cashbackSummary,
   totalSpentNzd,
   updateCashbackStatus,
+  type CashbackClaimRow,
   type CashbackSummary,
 } from '../../src/db/repository';
-import type { Category, Expense, CashbackStatus } from '../../src/db/types';
+import type { Category, CashbackSource, CashbackStatus } from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
 import { formatNzd, round2 } from '../../src/lib/money';
 import {
@@ -39,7 +40,7 @@ export default function CashbackScreen() {
   const { colors } = useTheme();
 
   const [filter, setFilter] = useState<Filter>('Pending');
-  const [items, setItems] = useState<Expense[]>([]);
+  const [items, setItems] = useState<CashbackClaimRow[]>([]);
   const [summary, setSummary] = useState<CashbackSummary | null>(null);
   const [byCategory, setByCategory] = useState<{ category: Category; total: number }[]>([]);
   const [tripSpend, setTripSpend] = useState(0);
@@ -53,7 +54,7 @@ export default function CashbackScreen() {
       return;
     }
     const [list, sum, cats, spent] = await Promise.all([
-      listCashbackExpenses(db, activeTrip.id, statusFromFilter(filter)),
+      listCashbackClaims(db, activeTrip.id, statusFromFilter(filter)),
       cashbackSummary(db, activeTrip.id),
       cashbackByCategory(db, activeTrip.id),
       totalSpentNzd(db, activeTrip.id),
@@ -86,8 +87,8 @@ export default function CashbackScreen() {
     return { totalClaims, confirmRate, expectedNzd, cashbackRate };
   }, [summary, tripSpend]);
 
-  async function setStatus(id: string, status: CashbackStatus) {
-    await updateCashbackStatus(db, id, status);
+  async function setStatus(id: string, source: CashbackSource, status: CashbackStatus) {
+    await updateCashbackStatus(db, id, source, status);
     refresh();
     await load();
   }
@@ -105,7 +106,7 @@ export default function CashbackScreen() {
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         <EmptyState
           title="No cashback yet"
-          subtitle="Tag an expense as Credit card, Flat or % and it shows up here. Card cashback lands on its own; ShopBack offers wait for you to confirm them."
+          subtitle="Tag an expense with the credit card, a ShopBack offer, or both and the claims show up here. Card cashback lands on its own; ShopBack offers wait for you to confirm them."
         />
       </ScrollView>
     );
@@ -203,29 +204,28 @@ export default function CashbackScreen() {
           subtitle="Try another filter, or add cashback on an expense."
         />
       ) : (
-        items.map((item) => {
-          const status = item.shopback_status ?? 'pending';
-          const cbType = item.shopback_type ?? 'percent';
-          const valueLabel = cashbackValueLabel(cbType, item.shopback_value, item.currency);
+        items.map((claim) => {
+          const { expense, status, source } = claim;
+          const valueLabel = cashbackValueLabel(claim.type, claim.value, expense.currency);
 
           return (
-            <View key={item.id} style={styles.claim}>
+            // A purchase claiming both schemes appears once per claim, so the
+            // key has to carry the source as well as the expense.
+            <View key={`${expense.id}:${source}`} style={styles.claim}>
               <Pressable
                 style={styles.claimTop}
-                onPress={() => router.push(`/expense/${item.id}`)}>
+                onPress={() => router.push(`/expense/${expense.id}`)}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.claimTitle} numberOfLines={1}>
-                    {item.description || item.category}
+                    {expense.description || expense.category}
                   </Text>
                   <Text style={styles.claimMeta}>
-                    {item.is_pretrip === 1 ? 'Pretrip' : formatLongDate(item.local_date)} ·{' '}
-                    {item.category} · {cashbackSourceLabel(cbType)} {valueLabel}
+                    {expense.is_pretrip === 1 ? 'Pretrip' : formatLongDate(expense.local_date)} ·{' '}
+                    {expense.category} · {cashbackSourceLabel(source)} {valueLabel}
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.claimNzd}>
-                    {formatNzd(item.shopback_amount_nzd ?? 0)}
-                  </Text>
+                  <Text style={styles.claimNzd}>{formatNzd(claim.amount_nzd)}</Text>
                   <Text
                     style={[
                       styles.statusBadge,
@@ -243,14 +243,14 @@ export default function CashbackScreen() {
                   <View style={{ flex: 1 }}>
                     <Button
                       title="Confirm"
-                      onPress={() => setStatus(item.id, 'confirmed')}
+                      onPress={() => setStatus(expense.id, source, 'confirmed')}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Button
                       title="Didn't land"
                       variant="secondary"
-                      onPress={() => setStatus(item.id, 'cancelled')}
+                      onPress={() => setStatus(expense.id, source, 'cancelled')}
                     />
                   </View>
                 </View>
@@ -260,14 +260,14 @@ export default function CashbackScreen() {
                     <Button
                       title="Mark pending"
                       variant="secondary"
-                      onPress={() => setStatus(item.id, 'pending')}
+                      onPress={() => setStatus(expense.id, source, 'pending')}
                     />
                   </View>
                   {status === 'cancelled' ? (
                     <View style={{ flex: 1 }}>
                       <Button
                         title="Confirm instead"
-                        onPress={() => setStatus(item.id, 'confirmed')}
+                        onPress={() => setStatus(expense.id, source, 'confirmed')}
                       />
                     </View>
                   ) : null}

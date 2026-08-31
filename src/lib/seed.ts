@@ -84,6 +84,11 @@ export async function seedRehearsalTrip(db: SQLiteDatabase): Promise<string> {
       shopback_amount_nzd: null,
       shopback_status: null,
       shopback_confirmed_at: null,
+      card_value: null,
+      card_amount: null,
+      card_amount_nzd: null,
+      card_status: null,
+      card_confirmed_at: null,
     });
   }
 

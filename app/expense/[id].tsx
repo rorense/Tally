@@ -128,6 +128,11 @@ export default function ExpenseScreen() {
         if (cancelled || !e) return;
         setExisting(e);
         setDate(e.local_date);
+        // The stored flag, deliberately not `isPretrip`: that helper also reads
+        // a date before the trip start as pretrip, which is right for grouping
+        // and totals but wrong here. Switching this on rewrites country to NZ
+        // on save, so inferring it would quietly relocate an expense that was
+        // genuinely bought abroad before the start date.
         setIsPretrip(e.is_pretrip === 1);
         setCountryCode(e.country_code);
         setCurrency(e.currency);

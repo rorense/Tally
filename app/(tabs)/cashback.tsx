@@ -15,6 +15,7 @@ import {
 import type { Category, CashbackSource, CashbackStatus } from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
 import { formatNzd, round2 } from '../../src/lib/money';
+import { isPretrip } from '../../src/lib/pretrip';
 import {
   cashbackSourceLabel,
   cashbackStatusLabel,
@@ -230,7 +231,10 @@ export default function CashbackScreen() {
                     {expense.description || expense.category}
                   </Text>
                   <Text style={styles.claimMeta}>
-                    {expense.is_pretrip === 1 ? 'Pretrip' : formatLongDate(expense.local_date)} ·{' '}
+                    {isPretrip(expense, activeTrip.start_date)
+                      ? 'Pretrip'
+                      : formatLongDate(expense.local_date)}{' '}
+                    ·{' '}
                     {expense.category} · {cashbackSourceLabel(source)} {valueLabel}
                   </Text>
                 </View>

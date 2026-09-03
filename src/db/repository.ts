@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { nowIso } from '../lib/dates';
 import { cashbackClaims, type CashbackClaim } from '../lib/cashback';
+import { IS_PRETRIP_SQL } from '../lib/pretrip';
 import type {
   Category,
   CategoryBudget,
@@ -709,17 +710,6 @@ const NET_NZD = `amount_nzd
       ELSE 0
     END`;
 
-/**
- * What counts as spend from before the trip. Takes the trip start date.
- *
- * The flag is the explicit answer, but an expense dated before the trip starts
- * belongs in the same bucket: the charts draw an axis from the start date, so
- * anything earlier has no column to land in and vanishes from the daily bars
- * and the cumulative line without appearing anywhere else. The export already
- * groups it this way; matching here is what keeps the two agreeing.
- */
-const IS_PRETRIP = `(is_pretrip = 1 OR local_date < ?)`;
-
 export async function totalSpentNzd(db: SQLiteDatabase, tripId: string): Promise<number> {
   const row = await db.getFirstAsync<{ total: number | null }>(
     `SELECT SUM(${NET_NZD}) AS total FROM expenses WHERE trip_id = ? AND deleted_at IS NULL`,
@@ -757,7 +747,7 @@ export async function spentByDay(
 ): Promise<{ local_date: string; total: number }[]> {
   return db.getAllAsync(
     `SELECT local_date, SUM(${NET_NZD}) AS total FROM expenses
-     WHERE trip_id = ? AND deleted_at IS NULL AND NOT ${IS_PRETRIP}
+     WHERE trip_id = ? AND deleted_at IS NULL AND NOT ${IS_PRETRIP_SQL}
      GROUP BY local_date ORDER BY local_date`,
     tripId,
     startDate
@@ -775,23 +765,30 @@ export async function pretripSpentNzd(
 ): Promise<number> {
   const row = await db.getFirstAsync<{ total: number | null }>(
     `SELECT SUM(${NET_NZD}) AS total FROM expenses
-     WHERE trip_id = ? AND deleted_at IS NULL AND ${IS_PRETRIP}`,
+     WHERE trip_id = ? AND deleted_at IS NULL AND ${IS_PRETRIP_SQL}`,
     tripId,
     startDate
   );
   return row?.total ?? 0;
 }
 
+/**
+ * Spend on one calendar day of the trip. Takes the start date because a day
+ * before it is pretrip, not a trip day with nothing in it — the same rule the
+ * charts and the export apply, rather than the bare flag this used to test.
+ */
 export async function spentOnDay(
   db: SQLiteDatabase,
   tripId: string,
-  date: string
+  date: string,
+  startDate: string
 ): Promise<number> {
   const row = await db.getFirstAsync<{ total: number | null }>(
     `SELECT SUM(${NET_NZD}) AS total FROM expenses
-     WHERE trip_id = ? AND local_date = ? AND is_pretrip = 0 AND deleted_at IS NULL`,
+     WHERE trip_id = ? AND local_date = ? AND deleted_at IS NULL AND NOT ${IS_PRETRIP_SQL}`,
     tripId,
-    date
+    date,
+    startDate
   );
   return row?.total ?? 0;
 }

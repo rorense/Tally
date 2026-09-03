@@ -18,6 +18,7 @@ import { CATEGORIES, type Category, type Expense } from '../../src/db/types';
 import { daysBetween, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact } from '../../src/lib/money';
 import { budgetPaceNzd } from '../../src/lib/pace';
+import { isPretrip } from '../../src/lib/pretrip';
 import { useApp } from '../../src/hooks/useApp';
 import { useCountries } from '../../src/hooks/useCountries';
 import { useSync } from '../../src/hooks/useSync';
@@ -54,7 +55,7 @@ export default function DashboardScreen() {
 
     const [total, today_, byCategory, budgetRows, recent, leg, cashback] = await Promise.all([
       totalSpentNzd(db, activeTrip.id),
-      spentOnDay(db, activeTrip.id, today),
+      spentOnDay(db, activeTrip.id, today, activeTrip.start_date),
       spentByCategory(db, activeTrip.id),
       listCategoryBudgets(db, activeTrip.id),
       listRecentExpenses(db, activeTrip.id, RECENT_LIMIT),
@@ -293,7 +294,7 @@ export default function DashboardScreen() {
                   {e.description || e.category}
                 </Text>
                 <Text style={styles.expenseMeta}>
-                  {`${e.is_pretrip === 1 ? 'Pretrip' : formatShortDate(e.local_date)} \u00B7 ${e.country_code}`}
+                  {`${isPretrip(e, activeTrip.start_date) ? 'Pretrip' : formatShortDate(e.local_date)} \u00B7 ${e.country_code}`}
                 </Text>
               </View>
               {/* Gross, so a row reads the same here as it does on the Expenses

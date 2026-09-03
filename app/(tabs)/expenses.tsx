@@ -19,6 +19,7 @@ import {
 } from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
 import { formatMoney, formatNzd, round2 } from '../../src/lib/money';
+import { isPretrip } from '../../src/lib/pretrip';
 import {
   cashbackClaims,
   cashbackSourceLabel,
@@ -62,10 +63,14 @@ export default function ExpensesScreen() {
     }, [load, revision])
   );
 
+  // Empty while no trip is active, which is also when the screen renders its
+  // empty state instead of a list.
+  const tripStart = activeTrip?.start_date ?? '';
+
   const sections = useMemo(() => {
     const groups = new Map<string, Expense[]>();
     for (const e of expenses) {
-      const key = e.is_pretrip === 1 ? 'pretrip' : e.local_date;
+      const key = isPretrip(e, tripStart) ? 'pretrip' : e.local_date;
       const list = groups.get(key) ?? [];
       list.push(e);
       groups.set(key, list);
@@ -84,7 +89,7 @@ export default function ExpensesScreen() {
         cashback: round2(data.reduce((sum, e) => sum + confirmedCashbackNzd(e), 0)),
         data,
       }));
-  }, [expenses]);
+  }, [expenses, tripStart]);
 
   if (!activeTrip) {
     return (

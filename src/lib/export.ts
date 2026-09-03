@@ -1,9 +1,10 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { listCategoryBudgets, listExpenses } from '../db/repository';
-import { CATEGORIES, type Trip } from '../db/types';
+import { CATEGORIES, type Expense, type Trip } from '../db/types';
 import { csvEscape } from './csv';
 import { round2 } from './money';
 import { cashbackClaims, confirmedCashbackNzd, netExpenseNzd } from './cashback';
+import { isPretrip } from './pretrip';
 import { buildXlsx, type Sheet } from './xlsx';
 
 export interface ExportData {
@@ -34,17 +35,21 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     listCategoryBudgets(db, trip.id),
   ]);
 
+  const pretrip = (e: Expense) => isPretrip(e, trip.start_date);
+
   // Oldest first reads better in a spreadsheet than the newest-first app list.
   // Pretrip rows sort before dated spend so the ledger matches the workbook.
+  // Grouped on the same test the ledger labels with, so the block stays
+  // contiguous rather than relying on dated-before-start rows happening to
+  // sort next to flagged ones.
   const ordered = [...expenses].sort((a, b) => {
-    if (a.is_pretrip !== b.is_pretrip) return b.is_pretrip - a.is_pretrip;
+    if (pretrip(a) !== pretrip(b)) return pretrip(a) ? -1 : 1;
     const byDate = a.local_date.localeCompare(b.local_date);
     if (byDate !== 0) return byDate;
     return a.spent_at.localeCompare(b.spent_at);
   });
 
-  const dayKey = (e: (typeof ordered)[number]) =>
-    e.is_pretrip === 1 || e.local_date < trip.start_date ? 'pretrip' : e.local_date;
+  const dayKey = (e: Expense) => (pretrip(e) ? 'pretrip' : e.local_date);
 
   const dayTotals = new Map<string, number>();
   for (const e of ordered) {

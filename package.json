@@ -22,7 +22,6 @@
     "expo-updates": "~57.0.10",
     "fflate": "^0.8.3",
     "react": "19.2.3",
-    "react-dom": "19.2.3",
     "react-native": "0.86.0",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-reanimated": "4.5.0",
@@ -38,14 +37,10 @@
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
   },
-  "overrides": {
-    "react-dom": "19.2.3"
-  },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web",
     "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "sample:xlsx": "node --experimental-strip-types scripts/emit-sample-xlsx.ts",

@@ -201,11 +201,6 @@ export function ProgressBar({ value, max, color }: { value: number; max: number;
   );
 }
 
-export function Divider() {
-  const styles = useThemedStyles(createStyles);
-  return <View style={styles.divider} />;
-}
-
 export function EmptyState({ title, subtitle }: { title: string; subtitle?: string }) {
   const styles = useThemedStyles(createStyles);
   return (
@@ -297,7 +292,6 @@ const createStyles = (c: Colors) =>
       overflow: 'hidden',
     },
     progressFill: { height: '100%', borderRadius: radius.pill },
-    divider: { height: 1, backgroundColor: c.border, marginVertical: spacing.md },
     empty: { alignItems: 'center', paddingVertical: spacing.xxl },
     emptyTitle: { ...type.heading, color: c.textMuted, marginBottom: spacing.xs },
     emptySub: { ...type.caption, color: c.textFaint, textAlign: 'center' },

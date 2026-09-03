@@ -12,7 +12,6 @@ import {
   deleteTrip,
   getTrip,
   listCategoryBudgets,
-  listCountries,
   listLegs,
   setCategoryBudget,
   syncSingleCountryLeg,
@@ -22,13 +21,13 @@ import {
 import {
   CATEGORIES,
   type Category,
-  type Country,
   type TripLeg,
   type TripType,
 } from '../../src/db/types';
 import { formatShortDate, isValidDate, todayLocal } from '../../src/lib/dates';
 import { parseAmount } from '../../src/lib/money';
 import { useApp } from '../../src/hooks/useApp';
+import { useCountries } from '../../src/hooks/useCountries';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
@@ -37,6 +36,7 @@ type NewTripMode = 'create' | 'join';
 export default function TripEditScreen() {
   const db = useSQLiteContext();
   const { refresh, setActiveTrip } = useApp();
+  const { countries, countryFor } = useCountries();
   const params = useLocalSearchParams<{ id?: string }>();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
@@ -51,12 +51,10 @@ export default function TripEditScreen() {
   const [tripType, setTripType] = useState<TripType | null>(isNew ? null : 'multi');
   const [singleCountry, setSingleCountry] = useState<string | null>(null);
   const [legs, setLegs] = useState<TripLeg[]>([]);
-  const [countries, setCountries] = useState<Country[]>([]);
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    setCountries(await listCountries(db));
     if (!tripId) return;
     const trip = await getTrip(db, tripId);
     if (!trip) return;
@@ -113,7 +111,7 @@ export default function TripEditScreen() {
       }
 
       if (tripType === 'single') {
-        const country = countries.find((c) => c.country_code === singleCountry);
+        const country = countryFor(singleCountry);
         if (country) await syncSingleCountryLeg(db, id!, country, startDate, endDate);
       }
 
@@ -271,7 +269,6 @@ export default function TripEditScreen() {
               <LegRow
                 key={leg.id}
                 leg={leg}
-                countries={countries}
                 onChange={(patch) => saveLeg(leg, patch)}
                 onRemove={() => removeLeg(leg)}
               />
@@ -340,18 +337,17 @@ function TypeOption({
 
 function LegRow({
   leg,
-  countries,
   onChange,
   onRemove,
 }: {
   leg: TripLeg;
-  countries: Country[];
   onChange: (patch: Partial<TripLeg>) => void;
   onRemove: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const styles = useThemedStyles(createStyles);
-  const country = countries.find((c) => c.country_code === leg.country_code);
+  const { countries, countryFor } = useCountries();
+  const country = countryFor(leg.country_code);
 
   return (
     <View style={styles.leg}>

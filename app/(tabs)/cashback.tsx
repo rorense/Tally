@@ -40,36 +40,46 @@ export default function CashbackScreen() {
   const { colors } = useTheme();
 
   const [filter, setFilter] = useState<Filter>('Pending');
-  const [items, setItems] = useState<CashbackClaimRow[]>([]);
+  const [claims, setClaims] = useState<CashbackClaimRow[]>([]);
   const [summary, setSummary] = useState<CashbackSummary | null>(null);
   const [byCategory, setByCategory] = useState<{ category: Category; total: number }[]>([]);
   const [tripSpend, setTripSpend] = useState(0);
 
+  // Every claim on the trip, unfiltered. The query already read them all and
+  // narrowed in JS, so re-running it per filter chip bought nothing; the chips
+  // now sort through what is already here and touch the database not at all.
   const load = useCallback(async () => {
     if (!activeTrip) {
-      setItems([]);
+      setClaims([]);
       setSummary(null);
       setByCategory([]);
       setTripSpend(0);
       return;
     }
     const [list, sum, cats, spent] = await Promise.all([
-      listCashbackClaims(db, activeTrip.id, statusFromFilter(filter)),
+      listCashbackClaims(db, activeTrip.id),
       cashbackSummary(db, activeTrip.id),
       cashbackByCategory(db, activeTrip.id),
       totalSpentNzd(db, activeTrip.id),
     ]);
-    setItems(list);
+    setClaims(list);
     setSummary(sum);
     setByCategory(cats);
     setTripSpend(spent);
-  }, [db, activeTrip, filter]);
+  }, [db, activeTrip]);
 
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load, revision])
   );
+
+  const items = useMemo(() => {
+    const status = statusFromFilter(filter);
+    // listCashbackClaims already orders pending-first within date order, and
+    // filtering preserves that.
+    return status === null ? claims : claims.filter((c) => c.status === status);
+  }, [claims, filter]);
 
   const analytics = useMemo(() => {
     if (!summary) return null;

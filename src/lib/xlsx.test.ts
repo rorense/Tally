@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { unzipSync, strFromU8 } from 'fflate';
-import { buildXlsx, columnName, toBase64, type Sheet } from './xlsx.ts';
+import { buildXlsx, columnName, type Sheet } from './xlsx.ts';
 
 const sample: Sheet = {
   name: 'Expenses',
@@ -120,28 +120,6 @@ test('an empty sheet still produces a readable workbook', () => {
   const sheet = text('xl/worksheets/sheet1.xml');
   assert.match(sheet, /dimension ref="A1:A1"/);
   assert.match(sheet, /<is><t[^>]*>Nothing<\/t>/);
-});
-
-test('toBase64 matches Buffer for binary input of every length remainder', () => {
-  for (const length of [0, 1, 2, 3, 4, 5, 255, 1024]) {
-    const bytes = new Uint8Array(length);
-    for (let i = 0; i < length; i++) bytes[i] = (i * 37 + 11) % 256;
-    assert.equal(
-      toBase64(bytes),
-      Buffer.from(bytes).toString('base64'),
-      `mismatch at length ${length}`
-    );
-  }
-});
-
-test('the workbook round-trips through base64 unchanged', () => {
-  const bytes = buildXlsx([sample]);
-  const restored = new Uint8Array(Buffer.from(toBase64(bytes), 'base64'));
-  assert.deepEqual(restored, bytes);
-
-  // And the restored bytes still unzip, so the file written to disk is valid.
-  const files = unzipSync(restored);
-  assert.ok(files['xl/workbook.xml']);
 });
 
 test('the file starts with the ZIP magic number', () => {

@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { getFxRate, listFxRates, saveFxRates } from '../db/repository';
+import { listFxRates, saveFxRates } from '../db/repository';
 import type { FxRate } from '../db/types';
 
 // The old api.frankfurter.app host now answers 301 and redirects here. Following
@@ -42,11 +42,6 @@ async function fetchJson(url: string): Promise<any> {
   }
 }
 
-export interface FetchRatesResult {
-  rates: Record<string, number>;
-  source: 'frankfurter' | 'er-api';
-}
-
 /**
  * Frankfurter (ECB) is the primary source but only publishes ~30 currencies, so
  * open.er-api.com fills in the rest. Their results are merged rather than one
@@ -56,10 +51,9 @@ export interface FetchRatesResult {
  * the app records why a refresh failed, and "it just doesn't update" is not a
  * fault anyone can act on from the other side of the world.
  */
-export async function fetchRates(): Promise<FetchRatesResult> {
+export async function fetchRates(): Promise<Record<string, number>> {
   const results: Record<string, number> = {};
   const failures: string[] = [];
-  let source: FetchRatesResult['source'] = 'er-api';
   let sawAny = false;
 
   // Broad coverage first, so ECB values can overwrite on top.
@@ -80,7 +74,6 @@ export async function fetchRates(): Promise<FetchRatesResult> {
     const data = await fetchJson(FRANKFURTER);
     if (data?.rates) {
       Object.assign(results, invert(data.rates));
-      source = 'frankfurter';
       sawAny = true;
     } else {
       failures.push('frankfurter: unexpected response');
@@ -91,7 +84,7 @@ export async function fetchRates(): Promise<FetchRatesResult> {
   }
 
   if (!sawAny) throw new Error(failures.join(' \u00B7 ') || 'No rate source reachable');
-  return { rates: results, source };
+  return results;
 }
 
 export interface RefreshResult {
@@ -103,8 +96,7 @@ export interface RefreshResult {
 /** Fetches and caches. Reports why it failed rather than throwing. */
 export async function refreshRates(db: SQLiteDatabase): Promise<RefreshResult> {
   try {
-    const { rates } = await fetchRates();
-    await saveFxRates(db, rates);
+    await saveFxRates(db, await fetchRates());
     return { ok: true, error: null };
   } catch (err) {
     return { ok: false, error: describe(err) };
@@ -114,13 +106,6 @@ export async function refreshRates(db: SQLiteDatabase): Promise<RefreshResult> {
 export async function loadRateMap(db: SQLiteDatabase): Promise<Map<string, FxRate>> {
   const rows = await listFxRates(db);
   return new Map(rows.map((r) => [r.currency, r]));
-}
-
-export async function rateFor(db: SQLiteDatabase, currency: string): Promise<FxRate | null> {
-  if (currency === 'NZD') {
-    return { currency: 'NZD', rate_to_nzd: 1, fetched_at: new Date().toISOString() };
-  }
-  return getFxRate(db, currency);
 }
 
 /**

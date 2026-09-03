@@ -10,16 +10,11 @@ import {
   View,
 } from 'react-native';
 import { ChipRow, EmptyState } from '../../src/components/ui';
-import {
-  listCountries,
-  listExpenses,
-  listUsedCountryCodes,
-} from '../../src/db/repository';
+import { listExpenses, listUsedCountryCodes } from '../../src/db/repository';
 import {
   CATEGORIES,
   type CashbackStatus,
   type Category,
-  type Country,
   type Expense,
 } from '../../src/db/types';
 import { formatLongDate } from '../../src/lib/dates';
@@ -30,17 +25,18 @@ import {
   confirmedCashbackNzd,
 } from '../../src/lib/cashback';
 import { useApp } from '../../src/hooks/useApp';
+import { useCountries } from '../../src/hooks/useCountries';
 import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
 export default function ExpensesScreen() {
   const db = useSQLiteContext();
   const { activeTrip, revision } = useApp();
+  const { countryFor } = useCountries();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [countries, setCountries] = useState<Country[]>([]);
   // Only offer country filters for places that actually have expenses — read
   // from the whole trip, not from the currently filtered list.
   const [usedCountries, setUsedCountries] = useState<string[]>([]);
@@ -50,7 +46,6 @@ export default function ExpensesScreen() {
 
   const load = useCallback(async () => {
     if (!activeTrip) return setExpenses([]);
-    setCountries(await listCountries(db));
     setUsedCountries(await listUsedCountryCodes(db, activeTrip.id));
     setExpenses(
       await listExpenses(db, activeTrip.id, {
@@ -159,7 +154,7 @@ export default function ExpensesScreen() {
           </View>
         )}
         renderItem={({ item }) => {
-          const country = countries.find((c) => c.country_code === item.country_code);
+          const country = countryFor(item.country_code);
           // A purchase can claim from both schemes, so the row totals them by
           // state rather than showing a single claim.
           const claims = cashbackClaims(item);

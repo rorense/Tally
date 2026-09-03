@@ -8,8 +8,7 @@ import { Button, Card, EmptyState, ProgressBar } from '../../src/components/ui';
 import {
   findLegForDate,
   listCategoryBudgets,
-  listCountries,
-  listExpenses,
+  listRecentExpenses,
   cashbackSummary,
   spentByCategory,
   spentOnDay,
@@ -20,9 +19,13 @@ import { daysBetween, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact } from '../../src/lib/money';
 import { budgetPaceNzd } from '../../src/lib/pace';
 import { useApp } from '../../src/hooks/useApp';
+import { useCountries } from '../../src/hooks/useCountries';
 import { useSync } from '../../src/hooks/useSync';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
+
+/** How many rows the Recent card shows. */
+const RECENT_LIMIT = 6;
 
 interface Dash {
   total: number;
@@ -40,6 +43,7 @@ export default function DashboardScreen() {
   const db = useSQLiteContext();
   const { activeTrip, trips, setActiveTrip, revision, refresh } = useApp();
   const { syncNow, syncing } = useSync();
+  const { countryFor } = useCountries();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [data, setData] = useState<Dash | null>(null);
@@ -48,32 +52,30 @@ export default function DashboardScreen() {
     if (!activeTrip) return setData(null);
     const today = todayLocal();
 
-    const [total, today_, byCategory, budgetRows, recent, leg, countries, cashback] =
-      await Promise.all([
-        totalSpentNzd(db, activeTrip.id),
-        spentOnDay(db, activeTrip.id, today),
-        spentByCategory(db, activeTrip.id),
-        listCategoryBudgets(db, activeTrip.id),
-        listExpenses(db, activeTrip.id),
-        findLegForDate(db, activeTrip.id, today),
-        listCountries(db),
-        cashbackSummary(db, activeTrip.id),
-      ]);
+    const [total, today_, byCategory, budgetRows, recent, leg, cashback] = await Promise.all([
+      totalSpentNzd(db, activeTrip.id),
+      spentOnDay(db, activeTrip.id, today),
+      spentByCategory(db, activeTrip.id),
+      listCategoryBudgets(db, activeTrip.id),
+      listRecentExpenses(db, activeTrip.id, RECENT_LIMIT),
+      findLegForDate(db, activeTrip.id, today),
+      cashbackSummary(db, activeTrip.id),
+    ]);
 
-    const country = leg ? countries.find((c) => c.country_code === leg.country_code) : null;
+    const country = countryFor(leg?.country_code);
 
     setData({
       total,
       today: today_,
       byCategory,
       budgets: Object.fromEntries(budgetRows.map((b) => [b.category, b.budget_nzd])),
-      recent: recent.slice(0, 6),
+      recent,
       currentCountry: country?.name ?? null,
       currentCurrency: leg?.currency_code ?? null,
       cashbackConfirmed: cashback.confirmed_nzd,
       cashbackPending: cashback.pending_nzd,
     });
-  }, [db, activeTrip]);
+  }, [db, activeTrip, countryFor]);
 
   useFocusEffect(
     useCallback(() => {

@@ -11,7 +11,6 @@ import {
   findLegForDate,
   getExpense,
   getLatestExpense,
-  listCountries,
   listMembers,
   updateExpense,
 } from '../../src/db/repository';
@@ -34,6 +33,7 @@ import {
 } from '../../src/lib/cashback';
 import { useApp } from '../../src/hooks/useApp';
 import { useAuth } from '../../src/hooks/useAuth';
+import { useCountries } from '../../src/hooks/useCountries';
 import { useRates } from '../../src/hooks/useRates';
 import { Colors, onFill, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
@@ -78,6 +78,7 @@ function previewClaim(
 export default function ExpenseScreen() {
   const db = useSQLiteContext();
   const { activeTrip, settings, refresh } = useApp();
+  const { countries } = useCountries();
   const { rateFor } = useRates();
   const { userId } = useAuth();
   const params = useLocalSearchParams<{ id: string }>();
@@ -87,7 +88,6 @@ export default function ExpenseScreen() {
 
   const [loaded, setLoaded] = useState(false);
   const [existing, setExisting] = useState<Expense | null>(null);
-  const [countries, setCountries] = useState<Country[]>([]);
   const [members, setMembers] = useState<TripMember[]>([]);
 
   const [date, setDate] = useState(todayLocal());
@@ -119,10 +119,8 @@ export default function ExpenseScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const allCountries = await listCountries(db);
       const tripMembers = activeTrip ? await listMembers(db, activeTrip.id) : [];
       if (cancelled) return;
-      setCountries(allCountries);
       setMembers(tripMembers);
 
       if (!isNew) {

@@ -9,7 +9,7 @@ import { TripSwitcherHeader } from './TripSwitcherHeader';
  * Compact header control. When signed out, opens the account modal. When signed
  * in, a tap on the email snippet jumps to Settings for sync / sign-out.
  */
-export function AuthHeaderButton() {
+function AuthHeaderButton() {
   const { configured, session, email } = useAuth();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();

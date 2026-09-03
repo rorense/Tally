@@ -5,7 +5,6 @@ import {
   dateRange,
   daysBetween,
   isValidDate,
-  isWithin,
   parseLocalDate,
   toLocalDate,
 } from './dates.ts';
@@ -79,12 +78,6 @@ test('daysBetween counts whole days', () => {
 test('dateRange is inclusive at both ends and has no gaps', () => {
   const range = dateRange('2027-01-05', '2027-01-08');
   assert.deepEqual(range, ['2027-01-05', '2027-01-06', '2027-01-07', '2027-01-08']);
-});
-
-test('isWithin matches the leg lookup used to infer country and currency', () => {
-  assert.equal(isWithin('2027-01-12', '2027-01-05', '2027-01-12'), true);
-  assert.equal(isWithin('2027-01-05', '2027-01-05', '2027-01-12'), true);
-  assert.equal(isWithin('2027-01-13', '2027-01-05', '2027-01-12'), false);
 });
 
 test('isValidDate rejects dates that do not exist', () => {

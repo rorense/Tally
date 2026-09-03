@@ -381,6 +381,26 @@ export async function getExpense(db: SQLiteDatabase, id: string): Promise<Expens
   );
 }
 
+/**
+ * The newest expenses on a trip, for the dashboard's Recent card.
+ *
+ * Separate from `listExpenses` because that one has no LIMIT: the dashboard
+ * used to read every expense on the trip and then keep six of them, which on a
+ * six-month trip is the whole ledger deserialised on every focus of the tab.
+ */
+export async function listRecentExpenses(
+  db: SQLiteDatabase,
+  tripId: string,
+  limit: number
+): Promise<Expense[]> {
+  return db.getAllAsync<Expense>(
+    `SELECT * FROM expenses WHERE trip_id = ? AND deleted_at IS NULL
+     ORDER BY local_date DESC, spent_at DESC LIMIT ?`,
+    tripId,
+    limit
+  );
+}
+
 /** Most recently logged expense on a trip. Used to sticky-default country on the next entry. */
 export async function getLatestExpense(
   db: SQLiteDatabase,
@@ -524,19 +544,34 @@ export interface CashbackClaimRow extends CashbackClaim {
 }
 
 /**
+ * Which columns hold a claim, and what status an absent one defaults to.
+ *
+ * Every aggregate below encodes the same rules, and `cashbackClaims` in
+ * lib/cashback.ts is the JS mirror of them. Spelling them once is what keeps
+ * the Cashback tab's totals and its list from drifting apart — the comments
+ * used to promise that, and a comment is not a compiler.
+ */
+const HAS_SHOPBACK_CLAIM = `shopback_type IS NOT NULL`;
+const HAS_CARD_CLAIM = `card_value IS NOT NULL OR card_amount_nzd IS NOT NULL`;
+const HAS_ANY_CLAIM = `(${HAS_SHOPBACK_CLAIM} OR ${HAS_CARD_CLAIM})`;
+
+/** ShopBack offers wait to be verified; card cashback posts on its own. */
+const SHOPBACK_STATUS = `COALESCE(shopback_status, 'pending')`;
+const CARD_STATUS = `COALESCE(card_status, 'confirmed')`;
+
+/**
  * Every cashback claim on a trip, one row per claim rather than per expense —
  * a purchase that went through ShopBack and was paid on the card is two claims
  * with their own statuses, and each is confirmed or cancelled on its own.
  */
 export async function listCashbackClaims(
   db: SQLiteDatabase,
-  tripId: string,
-  status: CashbackStatus | null = null
+  tripId: string
 ): Promise<CashbackClaimRow[]> {
   const rows = await db.getAllAsync<Expense>(
     `SELECT * FROM expenses
      WHERE trip_id = ? AND deleted_at IS NULL
-       AND (shopback_type IS NOT NULL OR card_value IS NOT NULL OR card_amount_nzd IS NOT NULL)
+       AND ${HAS_ANY_CLAIM}
      ORDER BY local_date DESC, spent_at DESC`,
     tripId
   );
@@ -544,12 +579,11 @@ export async function listCashbackClaims(
   const claims = rows.flatMap((expense) =>
     cashbackClaims(expense).map((claim) => ({ ...claim, expense }))
   );
-  const filtered = status === null ? claims : claims.filter((c) => c.status === status);
 
   // Pending first: those are the ones still waiting on a decision. Array.sort
   // is stable, so the date ordering from the query survives within each group.
   const rank: Record<CashbackStatus, number> = { pending: 0, confirmed: 1, cancelled: 2 };
-  return filtered.sort((a, b) => rank[a.status] - rank[b.status]);
+  return claims.sort((a, b) => rank[a.status] - rank[b.status]);
 }
 
 export interface CashbackSummary {
@@ -574,16 +608,16 @@ export async function cashbackSummary(
     count: number;
   }>(
     `SELECT status, SUM(nzd) AS total, COUNT(*) AS count FROM (
-       SELECT COALESCE(shopback_status, 'pending') AS status,
+       SELECT ${SHOPBACK_STATUS} AS status,
               COALESCE(shopback_amount_nzd, 0) AS nzd
        FROM expenses
-       WHERE trip_id = ? AND deleted_at IS NULL AND shopback_type IS NOT NULL
+       WHERE trip_id = ? AND deleted_at IS NULL AND ${HAS_SHOPBACK_CLAIM}
        UNION ALL
-       SELECT COALESCE(card_status, 'confirmed') AS status,
+       SELECT ${CARD_STATUS} AS status,
               COALESCE(card_amount_nzd, 0) AS nzd
        FROM expenses
        WHERE trip_id = ? AND deleted_at IS NULL
-         AND (card_value IS NOT NULL OR card_amount_nzd IS NOT NULL)
+         AND (${HAS_CARD_CLAIM})
      ) AS claims
      GROUP BY status`,
     tripId,
@@ -614,6 +648,15 @@ export async function cashbackSummary(
   return summary;
 }
 
+/**
+ * Confirmed cashback per category.
+ *
+ * Still SQL rather than a JS fold over `listCashbackClaims`, and deliberately
+ * so: for a legacy card claim left in the shopback_* columns with no status,
+ * this reads 'pending' where `cashbackClaims` reads 'confirmed'. Deriving it
+ * in JS would make this panel disagree with the summary tiles above it, which
+ * are still SQL. The two spellings get unified together or not at all.
+ */
 export async function cashbackByCategory(
   db: SQLiteDatabase,
   tripId: string
@@ -622,13 +665,13 @@ export async function cashbackByCategory(
     `SELECT category, SUM(nzd) AS total FROM (
        SELECT category, COALESCE(shopback_amount_nzd, 0) AS nzd FROM expenses
        WHERE trip_id = ? AND deleted_at IS NULL
-         AND shopback_type IS NOT NULL
-         AND COALESCE(shopback_status, 'pending') = 'confirmed'
+         AND ${HAS_SHOPBACK_CLAIM}
+         AND ${SHOPBACK_STATUS} = 'confirmed'
        UNION ALL
        SELECT category, COALESCE(card_amount_nzd, 0) AS nzd FROM expenses
        WHERE trip_id = ? AND deleted_at IS NULL
-         AND (card_value IS NOT NULL OR card_amount_nzd IS NOT NULL)
-         AND COALESCE(card_status, 'confirmed') = 'confirmed'
+         AND (${HAS_CARD_CLAIM})
+         AND ${CARD_STATUS} = 'confirmed'
      ) AS claims
      GROUP BY category ORDER BY total DESC`,
     tripId,
@@ -656,12 +699,12 @@ export async function deleteExpense(db: SQLiteDatabase, id: string) {
  */
 const NET_NZD = `amount_nzd
   - CASE
-      WHEN COALESCE(shopback_status, 'pending') = 'confirmed'
+      WHEN ${SHOPBACK_STATUS} = 'confirmed'
         THEN COALESCE(shopback_amount_nzd, 0)
       ELSE 0
     END
   - CASE
-      WHEN COALESCE(card_status, 'confirmed') = 'confirmed'
+      WHEN ${CARD_STATUS} = 'confirmed'
         THEN COALESCE(card_amount_nzd, 0)
       ELSE 0
     END`;
@@ -759,30 +802,8 @@ export async function listCountries(db: SQLiteDatabase): Promise<Country[]> {
   return db.getAllAsync<Country>('SELECT * FROM countries ORDER BY name');
 }
 
-export async function getCountry(
-  db: SQLiteDatabase,
-  code: string
-): Promise<Country | null> {
-  return db.getFirstAsync<Country>('SELECT * FROM countries WHERE country_code = ?', code);
-}
-
-export async function upsertCountry(db: SQLiteDatabase, c: Country) {
-  await db.runAsync(
-    `INSERT INTO countries (country_code, name, currency_code) VALUES (?, ?, ?)
-     ON CONFLICT(country_code) DO UPDATE SET name = excluded.name,
-       currency_code = excluded.currency_code`,
-    c.country_code,
-    c.name,
-    c.currency_code
-  );
-}
-
 export async function listFxRates(db: SQLiteDatabase): Promise<FxRate[]> {
   return db.getAllAsync<FxRate>('SELECT * FROM fx_rates ORDER BY currency');
-}
-
-export async function getFxRate(db: SQLiteDatabase, currency: string): Promise<FxRate | null> {
-  return db.getFirstAsync<FxRate>('SELECT * FROM fx_rates WHERE currency = ?', currency);
 }
 
 export async function saveFxRates(db: SQLiteDatabase, rates: Record<string, number>) {

@@ -21,11 +21,6 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Inclusive comparison on `YYYY-MM-DD` strings, which sort lexicographically. */
-export function isWithin(date: string, start: string, end: string): boolean {
-  return date >= start && date <= end;
-}
-
 export function addDays(date: string, days: number): string {
   const d = parseLocalDate(date);
   d.setDate(d.getDate() + days);

@@ -248,7 +248,6 @@ write(
   1024,
   render({ size: 1024, background: false, slash: SLASH_ON_LIGHT })
 );
-write('favicon.png', 256, render({ size: 256, background: true }));
 write('android-icon-background.png', 1024, plate(1024, BG));
 write(
   'android-icon-foreground.png',

@@ -6,17 +6,17 @@ import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Bar, CartesianChart, Line, Pie, PolarChart } from 'victory-native';
 import { Card, EmptyState } from '../../src/components/ui';
 import {
-  listCountries,
   pretripSpentNzd,
   spentByCategory,
   spentByCountry,
   spentByDay,
 } from '../../src/db/repository';
-import type { Category, Country } from '../../src/db/types';
+import type { Category } from '../../src/db/types';
 import { dateRange, formatShortDate, todayLocal } from '../../src/lib/dates';
 import { formatNzd, formatNzdCompact, round2 } from '../../src/lib/money';
 import { budgetPaceNzd } from '../../src/lib/pace';
 import { useApp } from '../../src/hooks/useApp';
+import { useCountries } from '../../src/hooks/useCountries';
 import { Colors, radius, spacing, type } from '../../src/theme/theme';
 import { useTheme, useThemedStyles } from '../../src/theme/useTheme';
 
@@ -29,28 +29,26 @@ const axisFont = matchFont({
 export default function ChartsScreen() {
   const db = useSQLiteContext();
   const { activeTrip, revision } = useApp();
+  const { countryFor } = useCountries();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
 
   const [byCategory, setByCategory] = useState<{ category: Category; total: number }[]>([]);
   const [byCountry, setByCountry] = useState<{ country_code: string; total: number }[]>([]);
   const [byDay, setByDay] = useState<{ local_date: string; total: number }[]>([]);
-  const [countries, setCountries] = useState<Country[]>([]);
   const [pretripTotal, setPretripTotal] = useState(0);
 
   const load = useCallback(async () => {
     if (!activeTrip) return;
-    const [cat, country, day, allCountries, pretrip] = await Promise.all([
+    const [cat, country, day, pretrip] = await Promise.all([
       spentByCategory(db, activeTrip.id),
       spentByCountry(db, activeTrip.id),
       spentByDay(db, activeTrip.id, activeTrip.start_date),
-      listCountries(db),
       pretripSpentNzd(db, activeTrip.id, activeTrip.start_date),
     ]);
     setByCategory(cat);
     setByCountry(country);
     setByDay(day);
-    setCountries(allCountries);
     setPretripTotal(pretrip);
   }, [db, activeTrip]);
 
@@ -254,7 +252,7 @@ export default function ChartsScreen() {
         <Text style={styles.title}>By country</Text>
         <View style={{ height: spacing.md }} />
         {byCountry.map((c) => {
-          const country = countries.find((x) => x.country_code === c.country_code);
+          const country = countryFor(c.country_code);
           return (
             <View key={c.country_code} style={styles.countryRow}>
               <Text style={styles.countryName}>{country?.name ?? c.country_code}</Text>

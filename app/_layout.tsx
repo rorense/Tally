@@ -9,6 +9,7 @@ import 'react-native-url-polyfill/auto';
 import { migrateDbIfNeeded } from '../src/db/migrations';
 import { AppProvider, useApp } from '../src/hooks/useApp';
 import { AuthProvider } from '../src/hooks/useAuth';
+import { CountriesProvider } from '../src/hooks/useCountries';
 import { RatesProvider } from '../src/hooks/useRates';
 import { SyncProvider } from '../src/hooks/useSync';
 import { palettes } from '../src/theme/theme';
@@ -82,11 +83,13 @@ export default function RootLayout() {
             <AuthProvider>
               <AppProvider>
                 <Themed>
-                  <RatesProvider>
-                    <SyncProvider>
-                      <Navigator />
-                    </SyncProvider>
-                  </RatesProvider>
+                  <CountriesProvider>
+                    <RatesProvider>
+                      <SyncProvider>
+                        <Navigator />
+                      </SyncProvider>
+                    </RatesProvider>
+                  </CountriesProvider>
                 </Themed>
               </AppProvider>
             </AuthProvider>

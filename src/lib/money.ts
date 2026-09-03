@@ -23,7 +23,7 @@ const SYMBOLS: Record<string, string> = {
   AED: 'AED ',
 };
 
-export function currencySymbol(code: string): string {
+function currencySymbol(code: string): string {
   return SYMBOLS[code] ?? `${code} `;
 }
 

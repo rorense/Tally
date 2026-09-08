@@ -23,7 +23,7 @@ import {
   type TripMember,
 } from '../../src/db/types';
 import { isValidDate, nowIso, todayLocal } from '../../src/lib/dates';
-import { convertToNzd, formatMoney, formatNzd, parseAmount } from '../../src/lib/money';
+import { convertToNzd, formatMoney, formatNzd, fxFeeNzd, parseAmount } from '../../src/lib/money';
 import { isRateStale, rateAgeLabel } from '../../src/lib/fx';
 import {
   cashbackClaims,
@@ -57,6 +57,9 @@ function shopbackType(m: ShopbackMode): CashbackType | null {
 function overHundred(type: CashbackType, value: number): boolean {
   return type !== 'flat' && value > 100;
 }
+
+/** Cards charge 1-3%. Anything past this is a typo, not a bank. */
+const MAX_FEE_PCT = 15;
 
 /**
  * What a claim is worth at the rate this expense is being saved at, or null
@@ -99,6 +102,11 @@ export default function ExpenseScreen() {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string | null>(null);
+  // Off by default. Cash, NZD spend, and a card that waives the fee all convert
+  // at the mid-market rate, so assuming a fee would quietly overstate the trip
+  // on every purchase that never carried one.
+  const [feeOn, setFeeOn] = useState(false);
+  const [feeValue, setFeeValue] = useState('');
   const [cardOn, setCardOn] = useState(false);
   const [cardValue, setCardValue] = useState('');
   const [sbMode, setSbMode] = useState<ShopbackMode>('None');
@@ -141,6 +149,8 @@ export default function ExpenseScreen() {
         setDescription(e.description);
         setAmount(String(e.amount));
         setPaidBy(e.paid_by);
+        setFeeOn(e.fx_fee_pct != null);
+        setFeeValue(e.fx_fee_pct != null ? String(e.fx_fee_pct) : '');
         // Read through the claims helper so an expense saved by an older build,
         // with its card claim still in the shopback_* columns, opens with the
         // card switch on rather than as a ShopBack offer.
@@ -237,6 +247,16 @@ export default function ExpenseScreen() {
     setCardOn(next);
   }
 
+  /**
+   * Same prefill as the card switch, for the same reason: the fee is a property
+   * of the card rather than of the purchase, so it comes from Settings and is
+   * only typed over for a transaction charged at a different rate.
+   */
+  function toggleFee(next: boolean) {
+    if (next && !feeValue) setFeeValue(String(settings.fxFeePct));
+    setFeeOn(next);
+  }
+
   const rate = rateFor(currency);
 
   /**
@@ -250,7 +270,15 @@ export default function ExpenseScreen() {
   const parsedAmount = parseAmount(amount);
   const parsedCardValue = parseAmount(cardValue);
   const parsedSbValue = parseAmount(sbValue);
+  const parsedFeeValue = parseAmount(feeValue);
   const sbType = shopbackType(sbMode);
+
+  /**
+   * The fee this expense will be saved with, or null for none. The preview and
+   * the saved row both read it, so what the form shows and what lands in
+   * `amount_nzd` can never come from different numbers.
+   */
+  const feePct = feeOn && parsedFeeValue !== null && parsedFeeValue > 0 ? parsedFeeValue : null;
 
   const nzdPreview = useMemo(() => {
     if (parsedAmount === null || effectiveRate === null) return null;
@@ -258,12 +286,20 @@ export default function ExpenseScreen() {
       existing &&
       keptRate !== null &&
       existing.amount === parsedAmount &&
-      existing.currency === currency
+      existing.currency === currency &&
+      existing.fx_fee_pct === feePct
     ) {
       return existing.amount_nzd;
     }
-    return convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct);
-  }, [parsedAmount, effectiveRate, settings.cardMarkupPct, existing, keptRate, currency]);
+    return convertToNzd(parsedAmount, effectiveRate, feePct ?? 0);
+  }, [parsedAmount, effectiveRate, feePct, existing, keptRate, currency]);
+
+  // Taken back off the total rather than multiplied out again, so the figure
+  // shown here is exactly the part of the NZD number above that is fee.
+  const feeNzdPreview =
+    nzdPreview !== null && parsedAmount !== null && effectiveRate !== null && feePct !== null
+      ? fxFeeNzd(nzdPreview, parsedAmount, effectiveRate)
+      : null;
 
   const cardPreview = previewClaim(
     parsedAmount,
@@ -293,6 +329,15 @@ export default function ExpenseScreen() {
         `No cached rate for ${currency}. Connect once to fetch rates, or enter the amount in a currency you already have a rate for.`
       );
     }
+    if (feeOn) {
+      if (parsedFeeValue === null || parsedFeeValue <= 0) {
+        return Alert.alert('Conversion fee', 'Enter the card’s conversion fee percentage.');
+      }
+      if (parsedFeeValue > MAX_FEE_PCT) {
+        return Alert.alert('Conversion fee', `Fee must be ${MAX_FEE_PCT}% or less.`);
+      }
+    }
+    const savedFeePct = feeOn ? parsedFeeValue! : null;
 
     // Read the old claims through the helper, so an expense whose card claim is
     // still in the shopback_* columns keeps its confirmed/cancelled state when
@@ -375,13 +420,17 @@ export default function ExpenseScreen() {
         status === 'confirmed' ? (oldShopback?.confirmed_at ?? nowIso()) : null;
     }
 
-    // Reopening an expense and saving without changing amount/currency must not
-    // rewrite history when the card-markup setting has moved in the meantime.
+    // Reopening an expense and saving without changing the amount, the currency
+    // or the fee must not rewrite history. That covers rows logged before the
+    // fee was recorded at all: their `amount_nzd` holds whatever the old global
+    // markup was, the tick reads as off, and saving leaves the figure alone
+    // rather than silently converting them at today's mid-market rate.
     const unchanged =
       existing !== null &&
       keptRate !== null &&
       existing.amount === parsedAmount &&
-      existing.currency === currency;
+      existing.currency === currency &&
+      existing.fx_fee_pct === savedFeePct;
 
     const payload = {
       trip_id: activeTrip.id,
@@ -395,7 +444,8 @@ export default function ExpenseScreen() {
       rate_to_nzd: effectiveRate,
       amount_nzd: unchanged
         ? existing.amount_nzd
-        : convertToNzd(parsedAmount, effectiveRate, settings.cardMarkupPct),
+        : convertToNzd(parsedAmount, effectiveRate, savedFeePct ?? 0),
+      fx_fee_pct: savedFeePct,
       spent_at: existing?.spent_at ?? nowIso(),
       // Pretrip keeps a date for the NOT NULL column; grouping uses is_pretrip.
       local_date: isValidDate(date) ? date : activeTrip.start_date,
@@ -470,8 +520,37 @@ export default function ExpenseScreen() {
               : ageLabel
                 ? `Rate ${ageLabel}`
                 : 'Using cached rate'}
-            {settings.cardMarkupPct > 0 ? ` \u00B7 includes ${settings.cardMarkupPct}% card markup` : ''}
+            {feeNzdPreview !== null
+              ? ` \u00B7 includes ${formatNzd(feeNzdPreview)} conversion fee`
+              : ''}
           </Text>
+        ) : null}
+
+        <View style={[styles.switchRow, styles.feeRow]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.switchLabel}>Conversion fee</Text>
+            <Text style={styles.switchHint}>
+              The card charged a foreign transaction fee. Added to the NZD total; cashback is
+              still worked out on the pre-fee amount.
+            </Text>
+          </View>
+          <Switch
+            value={feeOn}
+            onValueChange={toggleFee}
+            trackColor={{ true: colors.accent, false: colors.border }}
+          />
+        </View>
+
+        {feeOn ? (
+          <Field
+            containerStyle={{ marginTop: spacing.md, marginBottom: 0 }}
+            label="Fee %"
+            value={feeValue}
+            onChangeText={setFeeValue}
+            placeholder="1.9"
+            keyboardType="decimal-pad"
+            hint="Your card’s rate, from Settings. Change it here for this purchase only."
+          />
         ) : null}
       </Card>
 
@@ -684,6 +763,9 @@ const createStyles = (c: Colors) =>
       gap: spacing.lg,
       marginBottom: spacing.lg,
     },
+    // Sits under the rate note inside the amount card, where the two switches
+    // in the cards below are stacked against each other instead.
+    feeRow: { marginTop: spacing.lg, marginBottom: 0 },
     switchLabel: { ...type.body, color: c.text },
     switchHint: { ...type.caption, color: c.textFaint, marginTop: 2 },
     payerRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },

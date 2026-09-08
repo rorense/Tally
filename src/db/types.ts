@@ -135,6 +135,19 @@ export interface Expense extends SyncColumns {
   card_amount_nzd: number | null;
   card_status: CashbackStatus | null;
   card_confirmed_at: string | null;
+  /**
+   * The card's currency conversion fee on this purchase, as a percentage, or
+   * null when none was charged — cash, NZD spend, or a fee-free card.
+   *
+   * The fee is already inside `amount_nzd`; the rate is kept so it can be shown
+   * on its own, and so reopening the expense restores the tick rather than
+   * quietly dropping the fee on the next save.
+   *
+   * Cashback is deliberately unaffected. Both schemes pay on the pre-fee spend,
+   * and the cashback columns are worked out from `amount` at the mid-market
+   * `rate_to_nzd`, so a fee can never inflate a rebate.
+   */
+  fx_fee_pct: number | null;
 }
 
 export interface FxRate {

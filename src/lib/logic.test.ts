@@ -9,7 +9,7 @@ import {
   toLocalDate,
 } from './dates.ts';
 import { csvEscape } from './csv.ts';
-import { convertToNzd, parseAmount, round2 } from './money.ts';
+import { convertToNzd, fxFeeNzd, parseAmount, round2 } from './money.ts';
 
 test('toLocalDate reads the calendar day from local clock components', () => {
   // Holds in any timezone the tests happen to run in: 8:30pm on the 14th is
@@ -94,12 +94,31 @@ test('convertToNzd multiplies by the rate and rounds to cents', () => {
   assert.equal(convertToNzd(0, 1.9663), 0);
 });
 
-test('convertToNzd applies the card markup on top of the mid-market rate', () => {
+test('convertToNzd applies the conversion fee on top of the mid-market rate', () => {
   const mid = convertToNzd(100, 2);
-  const withMarkup = convertToNzd(100, 2, 2.5);
+  const withFee = convertToNzd(100, 2, 2.5);
   assert.equal(mid, 200);
-  assert.equal(withMarkup, 205);
-  assert.ok(withMarkup > mid, 'a markup must increase the NZD cost');
+  assert.equal(withFee, 205);
+  assert.ok(withFee > mid, 'a fee must increase the NZD cost');
+});
+
+test('no fee means the mid-market rate, so cash and NZD spend are not inflated', () => {
+  assert.equal(convertToNzd(46.8, 1.9663, 0), convertToNzd(46.8, 1.9663));
+});
+
+test('the fee and the pre-fee amount add back to the stored total', () => {
+  // A rate and amount where multiplying the percentage out a second time would
+  // round the other way and leave the two a cent apart.
+  const amount = 46.85;
+  const rate = 1.9663;
+  const total = convertToNzd(amount, rate, 1.9);
+  const fee = fxFeeNzd(total, amount, rate);
+  assert.equal(round2(total - fee), round2(amount * rate));
+});
+
+test('a purchase with no fee has no fee to report', () => {
+  const total = convertToNzd(100, 2);
+  assert.equal(fxFeeNzd(total, 100, 2), 0);
 });
 
 test('parseAmount accepts the comma decimal separator used across Europe', () => {

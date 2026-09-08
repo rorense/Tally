@@ -87,6 +87,7 @@ export async function seedRehearsalTrip(db: SQLiteDatabase): Promise<string> {
       card_value: null,
       card_amount: null,
       card_amount_nzd: null,
+      fx_fee_pct: null,
       card_status: null,
       card_confirmed_at: null,
     });

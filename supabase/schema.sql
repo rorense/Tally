@@ -117,6 +117,11 @@ alter table public.expenses add column if not exists card_amount_nzd numeric;
 alter table public.expenses add column if not exists card_status text;
 alter table public.expenses add column if not exists card_confirmed_at timestamptz;
 
+-- The card's currency conversion fee for one purchase, as a percentage, or null
+-- when none was charged. Already included in amount_nzd; kept so the fee can be
+-- shown on its own and so reopening an expense restores the tick.
+alter table public.expenses add column if not exists fx_fee_pct numeric;
+
 -- Pre-trip bookings were called "preflight" for one release. Rename rather than
 -- add, so a project from that window keeps the rows it already has.
 do $$

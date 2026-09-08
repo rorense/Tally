@@ -6,10 +6,12 @@ import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Bar, CartesianChart, Line, Pie, PolarChart } from 'victory-native';
 import { Card, EmptyState } from '../../src/components/ui';
 import {
+  conversionFeeSummary,
   pretripSpentNzd,
   spentByCategory,
   spentByCountry,
   spentByDay,
+  type ConversionFeeSummary,
 } from '../../src/db/repository';
 import type { Category } from '../../src/db/types';
 import { dateRange, formatShortDate, todayLocal } from '../../src/lib/dates';
@@ -37,19 +39,26 @@ export default function ChartsScreen() {
   const [byCountry, setByCountry] = useState<{ country_code: string; total: number }[]>([]);
   const [byDay, setByDay] = useState<{ local_date: string; total: number }[]>([]);
   const [pretripTotal, setPretripTotal] = useState(0);
+  const [fees, setFees] = useState<ConversionFeeSummary>({
+    fees_nzd: 0,
+    with_fee_nzd: 0,
+    without_fee_nzd: 0,
+  });
 
   const load = useCallback(async () => {
     if (!activeTrip) return;
-    const [cat, country, day, pretrip] = await Promise.all([
+    const [cat, country, day, pretrip, feeSummary] = await Promise.all([
       spentByCategory(db, activeTrip.id),
       spentByCountry(db, activeTrip.id),
       spentByDay(db, activeTrip.id, activeTrip.start_date),
       pretripSpentNzd(db, activeTrip.id, activeTrip.start_date),
+      conversionFeeSummary(db, activeTrip.id),
     ]);
     setByCategory(cat);
     setByCountry(country);
     setByDay(day);
     setPretripTotal(pretrip);
+    setFees(feeSummary);
   }, [db, activeTrip]);
 
   useFocusEffect(
@@ -140,6 +149,14 @@ export default function ChartsScreen() {
   }
 
   const maxCountry = Math.max(...byCountry.map((c) => c.total), 1);
+
+  // Longest bar sets the scale, so the smaller side stays readable even when
+  // almost everything was paid one way.
+  const maxFeeSide = Math.max(fees.with_fee_nzd, fees.without_fee_nzd, 1);
+  // The rate actually paid, which is the per-expense rate only while every
+  // charged purchase used the same one.
+  const effectiveFeeRate =
+    fees.with_fee_nzd > 0 ? round2((fees.fees_nzd / fees.with_fee_nzd) * 100) : 0;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -269,6 +286,46 @@ export default function ChartsScreen() {
           );
         })}
       </Card>
+
+      {fees.fees_nzd > 0 ? (
+        <Card>
+          <Text style={styles.title}>Conversion fees</Text>
+          <Text style={styles.subtitle}>
+            {`${formatNzd(fees.fees_nzd)} paid · ${effectiveFeeRate}% of the spend that carried one`}
+          </Text>
+          <View style={{ height: spacing.md }} />
+          <View style={styles.countryRow}>
+            <Text style={styles.countryName}>Fee charged</Text>
+            <View style={styles.countryBarTrack}>
+              <View
+                style={[
+                  styles.countryBarFill,
+                  {
+                    width: `${(fees.with_fee_nzd / maxFeeSide) * 100}%`,
+                    backgroundColor: colors.warning,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.countryValue}>{formatNzdCompact(fees.with_fee_nzd)}</Text>
+          </View>
+          <View style={styles.countryRow}>
+            <Text style={styles.countryName}>No fee</Text>
+            <View style={styles.countryBarTrack}>
+              <View
+                style={[
+                  styles.countryBarFill,
+                  { width: `${(fees.without_fee_nzd / maxFeeSide) * 100}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.countryValue}>{formatNzdCompact(fees.without_fee_nzd)}</Text>
+          </View>
+          <Text style={styles.feeNote}>
+            No fee covers cash, NZD spend, and anything logged before fees were tracked.
+          </Text>
+        </Card>
+      ) : null}
     </ScrollView>
   );
 }
@@ -312,4 +369,5 @@ const createStyles = (c: Colors) =>
     },
     countryBarFill: { height: '100%', backgroundColor: c.accent, borderRadius: radius.pill },
     countryValue: { ...type.caption, color: c.textMuted, width: 52, textAlign: 'right' },
+    feeNote: { ...type.caption, color: c.textFaint, marginTop: spacing.sm },
   });

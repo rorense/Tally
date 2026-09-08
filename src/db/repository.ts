@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { nowIso } from '../lib/dates';
 import { cashbackClaims, type CashbackClaim } from '../lib/cashback';
+import { round2 } from '../lib/money';
 import { IS_PRETRIP_SQL } from '../lib/pretrip';
 import type {
   Category,
@@ -718,6 +719,52 @@ export async function totalSpentNzd(db: SQLiteDatabase, tripId: string): Promise
     tripId
   );
   return row?.total ?? 0;
+}
+
+export interface ConversionFeeSummary {
+  /** What the card's conversion fees have cost across the trip, in NZD. */
+  fees_nzd: number;
+  /** Gross spend that carried a fee, and gross spend that did not. */
+  with_fee_nzd: number;
+  without_fee_nzd: number;
+}
+
+/**
+ * The trip's conversion fees, and the split of spend that was charged one.
+ *
+ * Rounded per row and then summed, the same shape `fxFeeNzd` uses, so this
+ * agrees to the cent with the column in the export.
+ *
+ * Only rows that recorded a fee count toward `fees_nzd`. One logged before the
+ * fee was tracked has it inside `amount_nzd` with nothing to say so, and
+ * reading the gap from the mid-market rate as a fee would be a guess dressed
+ * up as a figure. Those rows land in `without_fee_nzd`, which is why that side
+ * is labelled as spend with no fee *recorded* rather than no fee charged.
+ */
+export async function conversionFeeSummary(
+  db: SQLiteDatabase,
+  tripId: string
+): Promise<ConversionFeeSummary> {
+  const row = await db.getFirstAsync<{
+    fees_nzd: number | null;
+    with_fee_nzd: number | null;
+    without_fee_nzd: number | null;
+  }>(
+    `SELECT
+       SUM(CASE WHEN fx_fee_pct IS NOT NULL
+             THEN ROUND(amount_nzd - amount * rate_to_nzd, 2) ELSE 0 END) AS fees_nzd,
+       SUM(CASE WHEN fx_fee_pct IS NOT NULL THEN amount_nzd ELSE 0 END) AS with_fee_nzd,
+       SUM(CASE WHEN fx_fee_pct IS NULL THEN amount_nzd ELSE 0 END) AS without_fee_nzd
+     FROM expenses
+     WHERE trip_id = ? AND deleted_at IS NULL`,
+    tripId
+  );
+
+  return {
+    fees_nzd: round2(row?.fees_nzd ?? 0),
+    with_fee_nzd: round2(row?.with_fee_nzd ?? 0),
+    without_fee_nzd: round2(row?.without_fee_nzd ?? 0),
+  };
 }
 
 export async function spentByCategory(

@@ -6,6 +6,7 @@ import { SyncBanner } from '../../src/components/SyncBanner';
 import { TripIllustration } from '../../src/components/TripIllustration';
 import { Button, Card, EmptyState, ProgressBar } from '../../src/components/ui';
 import {
+  conversionFeeSummary,
   findLegForDate,
   listCategoryBudgets,
   listRecentExpenses,
@@ -38,6 +39,7 @@ interface Dash {
   currentCurrency: string | null;
   cashbackConfirmed: number;
   cashbackPending: number;
+  conversionFees: number;
 }
 
 export default function DashboardScreen() {
@@ -53,15 +55,17 @@ export default function DashboardScreen() {
     if (!activeTrip) return setData(null);
     const today = todayLocal();
 
-    const [total, today_, byCategory, budgetRows, recent, leg, cashback] = await Promise.all([
-      totalSpentNzd(db, activeTrip.id),
-      spentOnDay(db, activeTrip.id, today, activeTrip.start_date),
-      spentByCategory(db, activeTrip.id),
-      listCategoryBudgets(db, activeTrip.id),
-      listRecentExpenses(db, activeTrip.id, RECENT_LIMIT),
-      findLegForDate(db, activeTrip.id, today),
-      cashbackSummary(db, activeTrip.id),
-    ]);
+    const [total, today_, byCategory, budgetRows, recent, leg, cashback, fees] =
+      await Promise.all([
+        totalSpentNzd(db, activeTrip.id),
+        spentOnDay(db, activeTrip.id, today, activeTrip.start_date),
+        spentByCategory(db, activeTrip.id),
+        listCategoryBudgets(db, activeTrip.id),
+        listRecentExpenses(db, activeTrip.id, RECENT_LIMIT),
+        findLegForDate(db, activeTrip.id, today),
+        cashbackSummary(db, activeTrip.id),
+        conversionFeeSummary(db, activeTrip.id),
+      ]);
 
     const country = countryFor(leg?.country_code);
 
@@ -75,6 +79,7 @@ export default function DashboardScreen() {
       currentCurrency: leg?.currency_code ?? null,
       cashbackConfirmed: cashback.confirmed_nzd,
       cashbackPending: cashback.pending_nzd,
+      conversionFees: fees.fees_nzd,
     });
   }, [db, activeTrip, countryFor]);
 
@@ -100,6 +105,8 @@ export default function DashboardScreen() {
   const spent = data?.total ?? 0;
   const cashbackConfirmed = data?.cashbackConfirmed ?? 0;
   const cashbackPending = data?.cashbackPending ?? 0;
+  const conversionFees = data?.conversionFees ?? 0;
+  const hasCashback = cashbackConfirmed > 0 || cashbackPending > 0;
   const spentBeforeCashback = spent + cashbackConfirmed;
   const remaining = budget - spent;
   const tripDays = daysBetween(activeTrip.start_date, activeTrip.end_date) + 1;
@@ -115,6 +122,46 @@ export default function DashboardScreen() {
     elapsed
   );
   const onTrack = expectedPace === 0 || spent <= expectedPace;
+
+  /**
+   * What the headline number is made of. Cashback comes off it; the conversion
+   * fee is already inside it, so that row reads "included in" rather than as a
+   * subtraction — the fee is money spent, not money coming back.
+   */
+  const breakdownRows = (
+    <>
+      {hasCashback ? (
+        <>
+          <View style={styles.spendRow}>
+            <Text style={styles.spendRowLabel}>Before cashback</Text>
+            <Text style={styles.spendRowValue}>{formatNzd(spentBeforeCashback)}</Text>
+          </View>
+          {cashbackConfirmed > 0 ? (
+            <View style={styles.spendRow}>
+              <Text style={[styles.spendRowLabel, { color: colors.success }]}>
+                Confirmed cashback
+              </Text>
+              <Text style={[styles.spendRowValue, { color: colors.success }]}>
+                −{formatNzd(cashbackConfirmed)}
+              </Text>
+            </View>
+          ) : null}
+          {cashbackPending > 0 ? (
+            <View style={styles.spendRow}>
+              <Text style={styles.spendRowMuted}>Pending cashback</Text>
+              <Text style={styles.spendRowMuted}>{formatNzd(cashbackPending)}</Text>
+            </View>
+          ) : null}
+        </>
+      ) : null}
+      {conversionFees > 0 ? (
+        <View style={styles.spendRow}>
+          <Text style={styles.spendRowMuted}>Includes conversion fees</Text>
+          <Text style={styles.spendRowMuted}>{formatNzd(conversionFees)}</Text>
+        </View>
+      ) : null}
+    </>
+  );
 
   return (
     <ScrollView
@@ -178,33 +225,20 @@ export default function DashboardScreen() {
           {' \u00B7 NZD'}
         </Text>
 
-        {cashbackConfirmed > 0 || cashbackPending > 0 ? (
+        {/*
+          * Only a link when there is cashback to go and look at. Fees live on
+          * the expense itself, so a fee-only breakdown has nowhere to send you.
+          */}
+        {hasCashback ? (
           <Pressable
             style={styles.spendBreakdown}
             onPress={() => router.push('/(tabs)/cashback')}
             accessibilityRole="button"
             accessibilityLabel="Open Cashback">
-            <View style={styles.spendRow}>
-              <Text style={styles.spendRowLabel}>Before cashback</Text>
-              <Text style={styles.spendRowValue}>{formatNzd(spentBeforeCashback)}</Text>
-            </View>
-            {cashbackConfirmed > 0 ? (
-              <View style={styles.spendRow}>
-                <Text style={[styles.spendRowLabel, { color: colors.success }]}>
-                  Confirmed cashback
-                </Text>
-                <Text style={[styles.spendRowValue, { color: colors.success }]}>
-                  −{formatNzd(cashbackConfirmed)}
-                </Text>
-              </View>
-            ) : null}
-            {cashbackPending > 0 ? (
-              <View style={styles.spendRow}>
-                <Text style={styles.spendRowMuted}>Pending cashback</Text>
-                <Text style={styles.spendRowMuted}>{formatNzd(cashbackPending)}</Text>
-              </View>
-            ) : null}
+            {breakdownRows}
           </Pressable>
+        ) : conversionFees > 0 ? (
+          <View style={styles.spendBreakdown}>{breakdownRows}</View>
         ) : null}
 
         {budget > 0 ? (

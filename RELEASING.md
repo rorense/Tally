@@ -49,7 +49,7 @@ Empty output means an update will do.
 eas update --branch trip --message "what changed"
 ```
 
-That reaches every build on the `trip` channel — the Android `trip` build and the iOS `trip-testflight` build both. They share the channel on purpose.
+That reaches every build on the `trip` channel — the Android `trip` build, the iOS `trip` ad-hoc build, and the iOS `trip-testflight` build alike. They share the channel on purpose.
 
 The app checks for updates on launch (`checkAutomatically: "ON_LOAD"`), so testers get it next time they open the app, with a 3 second fallback to the cached version if the network is slow.
 
@@ -63,8 +63,8 @@ If an update seems not to arrive, check the version match first.
 
 | Profile | Platform | Use |
 | --- | --- | --- |
-| `trip` | Android | APK for the trip, sideloaded |
-| `trip-testflight` | iOS | Trip build over TestFlight |
+| `trip` | either | The trip build — Android APK, iOS ad-hoc |
+| `trip-testflight` | iOS | Trip build over TestFlight, when 90 days is long enough |
 | `preview` | either | One-off internal build |
 | `production` | either | App Store / Play Store submission |
 
@@ -76,7 +76,37 @@ eas build --profile trip --platform android
 
 Produces an APK. Download it on the phone and install — Android will ask you to allow installs from that source once.
 
+An APK does not expire. Nothing below about expiry applies to Android.
+
 ### iOS
+
+Two routes, and the choice is only about how long the build has to keep working.
+
+#### Ad-hoc — use this for a long trip
+
+The provisioning profile lasts a year, so the app keeps launching for the whole
+trip with nothing to do mid-way.
+
+Every phone must be registered *before* the build. On an Individual team the
+ad-hoc profile carries a hardcoded list of device UDIDs, and a phone added
+afterwards cannot be reached without building again.
+
+```bash
+eas device:create
+```
+
+That prints a link and a QR code. Open it on the phone itself — not on your
+laptop — install the profile it offers, and the device is registered. Repeat per
+phone. `eas device:list` shows who is on the list.
+
+```bash
+eas build --profile trip --platform ios
+```
+
+Send them the build page link and they install straight from it. No TestFlight
+app in the picture at all.
+
+#### TestFlight — fine for anything under 90 days
 
 ```bash
 eas build --profile trip-testflight --platform ios
@@ -88,21 +118,34 @@ eas submit --profile production --platform ios
 
 Then add testers in App Store Connect (below). The build takes a few minutes to finish processing on Apple's side before it shows up in TestFlight.
 
-**Do not use `--profile trip` for iOS.** It is ad-hoc distribution, which on an Individual team means the provisioning profile carries a hardcoded list of device UDIDs. Every phone must be registered with `eas device:create` *before* the build, and a device added afterwards cannot be reached without building again. `trip-testflight` is store distribution and needs no UDIDs at all.
+**A TestFlight build expires 90 days after upload** — not 90 days after install — and an expired one refuses to launch. Any trip longer than that wants the ad-hoc build instead.
 
-**Do not use `--profile production` for iOS trip builds either.** It works, but its channel is `production`, so the build stops receiving `eas update --branch trip` pushes. `trip-testflight` keeps the `trip` channel for exactly this reason.
+#### Either way
+
+**Do not use `--profile production` for iOS trip builds.** It works, but its channel is `production`, so the build stops receiving `eas update --branch trip` pushes. Both trip profiles keep the `trip` channel for exactly this reason.
+
+### Swapping a phone from TestFlight to ad-hoc
+
+Same bundle identifier, different signing identity. The install can replace the
+app container rather than merge into it, so treat it as a fresh install and
+assume the local database does not survive.
+
+Do the swap before the trip, while there is nothing on the phone worth losing,
+and rehearse sync again afterwards.
 
 ### First iOS build only
 
 `eas submit` offers to create the App Store Connect app record. Let it. One snag: the App Store Connect name must be unique across the entire App Store, and "Tally" is taken. Use anything free — "Tally Travel Budget" works. It only affects the App Store Connect listing; the home screen name comes from `expo.name` in `app.json`, so it still installs as **Tally**.
 
+This only matters on the TestFlight route. An ad-hoc build needs no App Store Connect record at all.
+
 ## Adding a travel partner
 
 They need the app, then a Tally account, then the trip code — three separate things.
 
-**The app, on iOS.** Add them in App Store Connect → **Users and Access** (Developer or App Manager role), then TestFlight → **+** next to Internal Testing → create a group → add them. They install the TestFlight app and the build appears.
+**The app, on iOS.** Register their phone with `eas device:create`, build, and send them the build page link — see [iOS](#ios). Nothing to set up in App Store Connect.
 
-Internal testers skip Beta App Review entirely, up to 100 of them. An Individual account can add users this way — they get App Store Connect access only, not Apple Developer Program membership. Only *external* testers need a review, and you do not need any.
+On the TestFlight route instead: add them in App Store Connect → **Users and Access** (Developer or App Manager role), then TestFlight → **+** next to Internal Testing → create a group → add them. They install the TestFlight app and the build appears. Internal testers skip Beta App Review entirely, up to 100 of them. An Individual account can add users this way — they get App Store Connect access only, not Apple Developer Program membership. Only *external* testers need a review, and you do not need any.
 
 **The app, on Android.** Send them the APK.
 
@@ -120,7 +163,9 @@ A week out, not the night before.
 
 - [ ] **Wake Supabase.** Free-tier projects pause after ~7 days idle. The [keep-alive workflow](.github/workflows/supabase-keepalive.yml) handles this, but GitHub disables scheduled workflows after 60 days with no commits — check the Actions tab shows recent green runs. If it is paused, un-pausing is a manual click in the Supabase dashboard.
 - [ ] **Run `supabase/schema.sql`** if you have pulled any changes since the last trip.
-- [ ] **Check the Apple certificate expiry.** `eas credentials` shows it. A distribution certificate lasts a year, and an expired one fails the build, not the install.
+- [ ] **Check the Apple certificate expiry.** `eas credentials` shows it. A distribution certificate lasts a year and the ad-hoc provisioning profile dies with it, so a certificate with four months left gives you an app with four months left however long the trip is. If less time remains than the trip needs, regenerate the certificate *before* building. A replacement runs a year from the day you create it, so do that here in the pre-trip window rather than months early, or you buy back less time than you think. Never revoke a certificate mid-trip — it kills the installed ad-hoc app immediately, on every phone. On the TestFlight route an expired certificate only fails the next build, not the installed app.
+- [ ] **Check the Apple Developer Program renewal date**, and that the card on file outlives the trip. A lapsed membership revokes the profiles and the app stops launching on every phone at once, mid-trip, with no way to fix it from a beach.
+- [ ] **Register every phone** with `eas device:create` before the iOS build. A phone added afterwards needs a whole new build to reach it.
 - [ ] **Build and install on both phones**, and confirm the app opens offline with aeroplane mode on.
 - [ ] **Rehearse sync on the real builds.** Create a throwaway trip, share the code to the second phone, put both in aeroplane mode, log expenses independently on each, then reconnect and confirm both converge on the same total. (Settings has a "Seed rehearsal trip" button that does the setup for you, but it is `__DEV__`-only — it will not appear in a `trip` build, which is the one you actually want to rehearse with.)
 - [ ] **Fetch rates once on wifi** before flying — Settings → Refresh rates now. Rates are cached and frozen per expense, but an unseen currency has no rate to freeze.
@@ -132,7 +177,10 @@ A week out, not the night before.
 The package is `eas-cli`, not `eas`. See [The CLI](#the-cli).
 
 **`Failed to set up credentials. Run 'eas device:create' to register your devices first`**
-You built iOS with an ad-hoc profile. Use `--profile trip-testflight` instead — see [iOS](#ios).
+An ad-hoc build with a device that is not on the profile. Register it and build again — see [iOS](#ios). `--profile trip-testflight` sidesteps UDIDs entirely if you need something installable right now.
+
+**The app will not launch, and iOS says the build expired or is no longer available**
+A TestFlight build past its 90 days, or an ad-hoc profile whose certificate expired. Either way it needs a new build — an update cannot fix it.
 
 **An update does not reach a device**
 Check `version` in `app.json` matches the version the build was made from, then check the build's channel matches the branch you published to. `eas build:list` shows the channel per build.

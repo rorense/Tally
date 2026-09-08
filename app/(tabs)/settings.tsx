@@ -45,7 +45,7 @@ export default function SettingsScreen() {
   const { colors, scheme } = useTheme();
 
   const [members, setMembers] = useState<TripMember[]>([]);
-  const [markup, setMarkup] = useState(String(settings.cardMarkupPct));
+  const [fee, setFee] = useState(String(settings.fxFeePct));
   const [cardCashback, setCardCashback] = useState(String(settings.cardCashbackPct));
   const [displayName, setDisplayName] = useState(settings.displayName);
   const [exporting, setExporting] = useState<'xlsx' | 'csv' | null>(null);
@@ -137,11 +137,11 @@ export default function SettingsScreen() {
     );
   }
 
-  function saveMarkup() {
-    const parsed = parseAmount(markup) ?? 0;
+  function saveFee() {
+    const parsed = parseAmount(fee) ?? 0;
     const clamped = Math.min(Math.max(parsed, 0), 15);
-    setMarkup(String(clamped));
-    updateSetting('cardMarkupPct', clamped);
+    setFee(String(clamped));
+    updateSetting('fxFeePct', clamped);
   }
 
   function saveCardCashback() {
@@ -328,13 +328,13 @@ export default function SettingsScreen() {
         ) : null}
         <View style={{ height: spacing.lg }} />
         <Field
-          label="Card markup %"
-          value={markup}
-          onChangeText={setMarkup}
-          onBlur={saveMarkup}
+          label="Conversion fee %"
+          value={fee}
+          onChangeText={setFee}
+          onBlur={saveFee}
           keyboardType="decimal-pad"
-          placeholder="0"
-          hint="Banks add roughly 1-3% over the mid-market rate. Setting this makes NZD totals match your statement more closely."
+          placeholder="1.9"
+          hint="Your card’s foreign transaction fee, roughly 1-3%. Prefills the fee switch when adding an expense — it is not applied on its own, so cash and NZD spend stay at the mid-market rate."
         />
         <Button
           title={refreshing ? 'Refreshing' : 'Refresh rates now'}

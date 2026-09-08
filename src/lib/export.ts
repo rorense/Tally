@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { listCategoryBudgets, listExpenses } from '../db/repository';
 import { CATEGORIES, type Expense, type Trip } from '../db/types';
 import { csvEscape } from './csv';
-import { round2 } from './money';
+import { fxFeeNzd, round2 } from './money';
 import { cashbackClaims, confirmedCashbackNzd, netExpenseNzd } from './cashback';
 import { isPretrip } from './pretrip';
 import { buildXlsx, type Sheet } from './xlsx';
@@ -57,7 +57,16 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     dayTotals.set(key, (dayTotals.get(key) ?? 0) + netExpenseNzd(e));
   }
 
+  /**
+   * Only rows that recorded a fee. One logged before the fee was tracked has it
+   * baked into `amount_nzd` with nothing to say so, and reporting the gap from
+   * the mid-market rate as a fee would be a guess dressed up as a figure.
+   */
+  const feeNzd = (e: Expense) =>
+    e.fx_fee_pct != null ? fxFeeNzd(e.amount_nzd, e.amount, e.rate_to_nzd) : null;
+
   const total = round2(ordered.reduce((sum, e) => sum + netExpenseNzd(e), 0));
+  const conversionFees = round2(ordered.reduce((sum, e) => sum + (feeNzd(e) ?? 0), 0));
   const cashbackConfirmed = round2(
     ordered.reduce((sum, e) => sum + confirmedCashbackNzd(e), 0)
   );
@@ -81,6 +90,9 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
   sidePanel.push(['Total (net cashback)', total]);
   if (cashbackConfirmed > 0) {
     sidePanel.push(['Cashback confirmed', cashbackConfirmed]);
+  }
+  if (conversionFees > 0) {
+    sidePanel.push(['Conversion fees', conversionFees]);
   }
   sidePanel.push(['', '']);
   sidePanel.push(['Category Spends', '']);
@@ -118,6 +130,7 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
       round2(e.amount),
       e.currency,
       round2(e.amount_nzd),
+      feeNzd(e) ?? '',
       shopback?.type ?? '',
       shopback?.value != null ? round2(shopback.value) : '',
       shopback?.amount != null ? round2(shopback.amount) : '',
@@ -131,7 +144,7 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     ]);
   }
 
-  const emptyLedger = Array<string>(16).fill('');
+  const emptyLedger = Array<string>(17).fill('');
   const rowCount = Math.max(ledgerRows.length, sidePanel.length);
   const sheetRows: (string | number)[][] = [];
   for (let i = 0; i < rowCount; i++) {
@@ -147,6 +160,7 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
     'Amount',
     'Currency',
     'NZD Equivalent',
+    'Conversion Fee NZD',
     'ShopBack Type',
     'ShopBack Value',
     'ShopBack Amount',
@@ -172,6 +186,7 @@ export async function buildExport(db: SQLiteDatabase, trip: Trip): Promise<Expor
       { header: 'Amount', width: 12, format: 'money' },
       { header: 'Currency', width: 10 },
       { header: 'NZD Equivalent', width: 14, format: 'money' },
+      { header: 'Conversion Fee NZD', width: 16, format: 'money' },
       { header: 'ShopBack Type', width: 12 },
       { header: 'ShopBack Value', width: 12, format: 'money' },
       { header: 'ShopBack Amount', width: 14, format: 'money' },

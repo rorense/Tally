@@ -5,7 +5,10 @@ import { isThemePreference, type ThemePreference } from '../theme/useTheme';
 export const SETTING_KEYS = {
   activeTripId: 'active_trip_id',
   wifiOnlySync: 'wifi_only_sync',
-  cardMarkupPct: 'card_markup_pct',
+  // Still spelled `card_markup_pct` on disk. Renaming the key would read as
+  // unset on a phone that already has a rate saved, silently resetting it to
+  // the default, for no behavioural gain.
+  fxFeePct: 'card_markup_pct',
   cardCashbackPct: 'card_cashback_pct',
   displayName: 'display_name',
   themePreference: 'theme_preference',
@@ -15,7 +18,13 @@ export interface AppSettings {
   activeTripId: string | null;
   /** Defaults on, to protect a limited European eSIM plan. */
   wifiOnlySync: boolean;
-  cardMarkupPct: number;
+  /**
+   * The card's currency conversion fee, prefilled when the fee is ticked on an
+   * expense. Never applied on its own: a purchase converts at the mid-market
+   * rate unless that expense says the fee was charged, because cash and NZD
+   * spend carry no conversion at all.
+   */
+  fxFeePct: number;
   /** Rate the credit card pays back, prefilled when tagging a card expense. */
   cardCashbackPct: number;
   displayName: string;
@@ -25,17 +34,17 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   activeTripId: null,
   wifiOnlySync: true,
-  cardMarkupPct: 0,
+  fxFeePct: 1.9,
   cardCashbackPct: 0.8,
   displayName: '',
   themePreference: 'system',
 };
 
 export async function loadSettings(db: SQLiteDatabase): Promise<AppSettings> {
-  const [activeTripId, wifiOnly, markup, cardCashback, displayName, theme] = await Promise.all([
+  const [activeTripId, wifiOnly, fxFee, cardCashback, displayName, theme] = await Promise.all([
     getSetting(db, SETTING_KEYS.activeTripId),
     getSetting(db, SETTING_KEYS.wifiOnlySync),
-    getSetting(db, SETTING_KEYS.cardMarkupPct),
+    getSetting(db, SETTING_KEYS.fxFeePct),
     getSetting(db, SETTING_KEYS.cardCashbackPct),
     getSetting(db, SETTING_KEYS.displayName),
     getSetting(db, SETTING_KEYS.themePreference),
@@ -44,8 +53,8 @@ export async function loadSettings(db: SQLiteDatabase): Promise<AppSettings> {
   return {
     activeTripId,
     wifiOnlySync: wifiOnly === null ? DEFAULT_SETTINGS.wifiOnlySync : wifiOnly === '1',
-    cardMarkupPct: markup === null ? 0 : Number(markup) || 0,
     // Only an unset key falls back to the default; an explicit 0 stays 0.
+    fxFeePct: fxFee === null ? DEFAULT_SETTINGS.fxFeePct : Number(fxFee) || 0,
     cardCashbackPct:
       cardCashback === null ? DEFAULT_SETTINGS.cardCashbackPct : Number(cardCashback) || 0,
     displayName: displayName ?? '',

@@ -51,13 +51,28 @@ export function formatNzdCompact(amount: number): string {
 /**
  * Converts a foreign amount to NZD.
  *
- * `rateToNzd` is how many NZD one unit of the foreign currency buys. The card
- * markup is added on top because ECB mid-market rates are not what a bank
- * actually charges; Visa and Mastercard typically add 1-3%.
+ * `rateToNzd` is how many NZD one unit of the foreign currency buys.
+ * `feePct` is the card's currency conversion fee, added on top because ECB
+ * mid-market rates are not what a bank actually charges; cards typically add
+ * 1-3% on a foreign transaction. It is per-purchase rather than global: cash,
+ * NZD spend, and a fee-free card all convert at the mid-market rate.
  */
-export function convertToNzd(amount: number, rateToNzd: number, cardMarkupPct = 0): number {
+export function convertToNzd(amount: number, rateToNzd: number, feePct = 0): number {
   const converted = amount * rateToNzd;
-  return round2(converted * (1 + cardMarkupPct / 100));
+  return round2(converted * (1 + feePct / 100));
+}
+
+/**
+ * The fee portion of a stored NZD total.
+ *
+ * Taken as the difference from the mid-market value rather than by multiplying
+ * the percentage a second time, so the fee and the pre-fee amount always add
+ * back to the `amount_nzd` on the row. Two independent roundings could leave
+ * them a cent apart, which in a ledger reads as an error rather than as
+ * rounding.
+ */
+export function fxFeeNzd(amountNzd: number, amount: number, rateToNzd: number): number {
+  return round2(amountNzd - amount * rateToNzd);
 }
 
 export function round2(n: number): number {

@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { COUNTRY_SEED } from './countries';
 
-const DATABASE_VERSION = 7;
+const DATABASE_VERSION = 8;
 
 interface Migration {
   /** The `user_version` the database carries once this step has committed. */
@@ -215,6 +215,24 @@ const MIGRATIONS: Migration[] = [
           shopback_confirmed_at = NULL
         WHERE shopback_type = 'card';
       `);
+    },
+  },
+  {
+    to: 8,
+    /**
+     * The card's currency conversion fee, recorded per purchase instead of as
+     * the old always-on Settings markup. Cash and NZD spend never carried one,
+     * so applying a single rate to everything overstated exactly the purchases
+     * it was not charged on.
+     *
+     * Existing rows stay null rather than being backfilled. Their `amount_nzd`
+     * already holds whatever the markup setting was at the moment each was
+     * saved, and that value is not recoverable from the row — a backfill would
+     * have to guess, and guessing wrong here silently rewrites the ledger of a
+     * trip already underway. Null means "not recorded", which is the truth.
+     */
+    up: async (db) => {
+      await db.execAsync(`ALTER TABLE expenses ADD COLUMN fx_fee_pct REAL`);
     },
   },
 ];

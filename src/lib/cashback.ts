@@ -23,8 +23,9 @@ export function computeCashbackAmount(
 }
 
 /**
- * Cashback to NZD at the expense's frozen mid-market rate. No card markup —
- * cashback is a rebate, not a card charge.
+ * Cashback to NZD at the expense's frozen mid-market rate. Never the currency
+ * conversion fee — cashback is a rebate on the spend, not a card charge, and
+ * both schemes pay on the pre-fee amount.
  */
 export function computeCashbackNzd(cashbackAmount: number, rateToNzd: number): number {
   return round2(cashbackAmount * rateToNzd);

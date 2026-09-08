@@ -424,8 +424,8 @@ export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Pr
       currency, rate_to_nzd, amount_nzd, spent_at, local_date, is_pretrip, paid_by,
       shopback_type, shopback_value, shopback_amount, shopback_amount_nzd, shopback_status,
       shopback_confirmed_at, card_value, card_amount, card_amount_nzd, card_status,
-      card_confirmed_at, updated_at, deleted_at, dirty)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)`,
+      card_confirmed_at, fx_fee_pct, updated_at, deleted_at, dirty)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1)`,
     id,
     input.trip_id,
     input.leg_id,
@@ -451,6 +451,7 @@ export async function createExpense(db: SQLiteDatabase, input: ExpenseInput): Pr
     input.card_amount_nzd,
     input.card_status,
     input.card_confirmed_at,
+    input.fx_fee_pct,
     t.updated_at
   );
   return id;
@@ -464,7 +465,7 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
       is_pretrip = ?, paid_by = ?, shopback_type = ?, shopback_value = ?, shopback_amount = ?,
       shopback_amount_nzd = ?, shopback_status = ?, shopback_confirmed_at = ?,
       card_value = ?, card_amount = ?, card_amount_nzd = ?, card_status = ?,
-      card_confirmed_at = ?, updated_at = ?, dirty = 1 WHERE id = ?`,
+      card_confirmed_at = ?, fx_fee_pct = ?, updated_at = ?, dirty = 1 WHERE id = ?`,
     input.trip_id,
     input.leg_id,
     input.country_code,
@@ -489,6 +490,7 @@ export async function updateExpense(db: SQLiteDatabase, id: string, input: Expen
     input.card_amount_nzd,
     input.card_status,
     input.card_confirmed_at,
+    input.fx_fee_pct,
     t.updated_at,
     id
   );

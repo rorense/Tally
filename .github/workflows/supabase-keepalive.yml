@@ -3,14 +3,16 @@ name: Supabase keep-alive
 # Free-tier Supabase projects pause after ~7 days of inactivity, and un-pausing
 # is a manual click in the dashboard. Tally is used in bursts — once per trip,
 # months apart — so without this the first sync of every trip fails at the
-# airport. Any query that reaches Postgres resets the timer; server_now() is the
-# cheapest one the schema already has.
+# airport. server_now() is the cheapest query the schema already has.
+#
+# Twice a week was not enough: on 2026-10-11 Supabase warned of inactivity three
+# days after a successful ping, so one tiny call every 3-4 days doesn't count as
+# "sufficient activity". Daily is the cheap next step.
 
 on:
   schedule:
-    # Twice a week against a 7-day budget, so a single dropped run is harmless.
     # Off the hour because GitHub delays cron jobs most at :00. Times are UTC.
-    - cron: '17 6 * * 1,4'
+    - cron: '17 6 * * *'
   workflow_dispatch:
 
 jobs:

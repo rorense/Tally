@@ -8,11 +8,16 @@ name: Supabase keep-alive
 # Twice a week was not enough: on 2026-10-11 Supabase warned of inactivity three
 # days after a successful ping, so one tiny call every 3-4 days doesn't count as
 # "sufficient activity". Daily is the cheap next step.
+#
+# Daily was not enough either: ten straight successful daily pings, and Supabase
+# still warned on 2026-10-20. Supabase doesn't publish what it counts, so this is
+# a guess: more requests, across more than one service (PostgREST and Auth), at
+# several times of day. Nothing here needed a schema change or a wider anon grant.
 
 on:
   schedule:
     # Off the hour because GitHub delays cron jobs most at :00. Times are UTC.
-    - cron: '17 6 * * *'
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -53,3 +58,20 @@ jobs:
             echo "::error::Keep-alive failed with HTTP $status. The project may already be paused, or the anon grant on server_now() is missing."
             exit 1
           fi
+
+          # Extra traffic, best effort: a failure here is logged, not fatal,
+          # since the server_now() check above already proved the project is up.
+          for i in 1 2 3 4; do
+            sleep 5
+            curl -sS --max-time 30 -o /dev/null -w "server_now #$i: HTTP %{http_code}\n" \
+              -X POST "${SUPABASE_URL%/}/rest/v1/rpc/server_now" \
+              -H "apikey: $SUPABASE_ANON_KEY" \
+              -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+              -H 'Content-Type: application/json' \
+              -d '{}' || true
+          done
+          for path in health settings; do
+            curl -sS --max-time 30 -o /dev/null -w "auth/$path: HTTP %{http_code}\n" \
+              "${SUPABASE_URL%/}/auth/v1/$path" \
+              -H "apikey: $SUPABASE_ANON_KEY" || true
+          done
